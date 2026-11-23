@@ -12,28 +12,32 @@
   import SenseCard from '../components/SenseCard.svelte';
   import RelationList from '../components/RelationList.svelte';
 
-  export let wordId: number;
+  interface Props {
+    wordId: number;
+  }
+
+  let { wordId }: Props = $props();
 
   const reviewStatuses: Status[] = ['unreviewed', 'kept', 'followup', 'hidden'];
 
-  let entry: DictionaryEntry | null = null;
-  let metadata: Metadata | null = null;
-  let availableTags: Tag[] = [];
-  let isLoading = true;
-  let error = '';
-  let notice = '';
+  let entry = $state<DictionaryEntry | null>(null);
+  let metadata = $state<Metadata | null>(null);
+  let availableTags = $state<Tag[]>([]);
+  let isLoading = $state(true);
+  let error = $state('');
+  let notice = $state('');
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
-  let showArchived = false;
-  let isEditingIdentity = false;
-  let isAddingSense = false;
-  let newMeaning = '';
-  let newDescription = '';
-  let notes = '';
+  let showArchived = $state(false);
+  let isEditingIdentity = $state(false);
+  let isAddingSense = $state(false);
+  let newMeaning = $state('');
+  let newDescription = $state('');
+  let notes = $state('');
 
-  $: visibleSenses = entry?.senses.filter(
+  let visibleSenses = $derived(entry?.senses.filter(
     (sense) => sense.active || ($editMode && showArchived),
-  ) ?? [];
+  ) ?? []);
 
   onMount(() => {
     void refresh();
@@ -117,7 +121,7 @@
   }
 </script>
 
-<button class="btn btn-ghost btn-sm mb-4" on:click={() => navigate('/')}>
+<button class="btn btn-ghost btn-sm mb-4" onclick={() => navigate('/')}>
   ← Dictionary
 </button>
 
@@ -131,7 +135,7 @@
   <div class="toast toast-top toast-end z-50" aria-live="polite">
     <div class="alert alert-success shadow-lg" role="status">
       <span>{notice}</span>
-      <button class="btn btn-ghost btn-xs" aria-label="Dismiss notification" on:click={clearNotice}>×</button>
+      <button class="btn btn-ghost btn-xs" aria-label="Dismiss notification" onclick={clearNotice}>×</button>
     </div>
   </div>
 {/if}
@@ -151,10 +155,10 @@
     <div class="flex gap-2 flex-wrap">
       <button
         class="btn btn-outline btn-sm"
-        on:click={() => navigate(`/word/${wordId}/references`)}
+        onclick={() => navigate(`/word/${wordId}/references`)}
       >References ({entry.source_page_count})</button>
       {#if $editMode}
-        <button class="btn btn-primary btn-sm" on:click={() => { isEditingIdentity = !isEditingIdentity; }}>
+        <button class="btn btn-primary btn-sm" onclick={() => { isEditingIdentity = !isEditingIdentity; }}>
           Edit entry
         </button>
       {/if}
@@ -176,7 +180,7 @@
       {#each reviewStatuses as status}
         <button
           class={`btn btn-sm ${entry.human_status === status ? 'btn-primary' : 'btn-outline'}`}
-          on:click={() => updateEntry({ human_status: status })}
+          onclick={() => updateEntry({ human_status: status })}
         >{status}</button>
       {/each}
     </section>
@@ -186,14 +190,14 @@
     <div class="flex justify-between items-center mb-3">
       <h3 class="text-xl font-semibold">Meanings</h3>
       {#if $editMode}
-        <button class="btn btn-primary btn-sm" on:click={() => { isAddingSense = !isAddingSense; }}>
+        <button class="btn btn-primary btn-sm" onclick={() => { isAddingSense = !isAddingSense; }}>
           + Add meaning
         </button>
       {/if}
     </div>
 
     {#if isAddingSense && $editMode}
-      <form class="surface p-4 space-y-2 mb-4" on:submit|preventDefault={addSense}>
+      <form class="surface p-4 space-y-2 mb-4" onsubmit={(event) => { event.preventDefault(); void addSense(); }}>
         <label class="field">
           <span>English meaning</span>
           <textarea bind:value={newMeaning} required></textarea>
@@ -243,7 +247,7 @@
           <a
             class="link link-primary"
             href={`/word/${component.expression_id}`}
-            on:click={(event) => {
+            onclick={(event) => {
               event.preventDefault();
               navigate(`/word/${component.expression_id}`);
             }}
@@ -259,7 +263,7 @@
     <section class="surface p-5 mt-5">
       <div class="panel-header">
         <h3 class="text-xl font-semibold">Textbook evidence</h3>
-        <button class="btn btn-outline btn-sm" on:click={() => navigate(`/word/${wordId}/references`)}>
+        <button class="btn btn-outline btn-sm" onclick={() => navigate(`/word/${wordId}/references`)}>
           All references
         </button>
       </div>
@@ -278,7 +282,7 @@
     <section class="surface p-5 mt-5">
       <h3 class="font-semibold mb-3">Notes</h3>
       {#if $editMode}
-        <form on:submit|preventDefault={() => updateEntry({ notes })}>
+        <form onsubmit={(event) => { event.preventDefault(); void updateEntry({ notes }); }}>
           <textarea
             class="textarea textarea-bordered w-full"
             aria-label="Entry notes"

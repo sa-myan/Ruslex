@@ -4,23 +4,27 @@
   import { errorMessage } from '../lib/errors';
   import type { Example, Pattern } from '../lib/types';
 
-  export let wordId: number;
-  export let senseId: number;
-  export let kind: 'examples' | 'patterns';
-  export let items: (Example | Pattern)[];
-  export let refresh: () => Promise<boolean>;
-  export let onSaved: () => void;
-  export let onSaveStart: () => void;
+  interface Props {
+    wordId: number;
+    senseId: number;
+    kind: 'examples' | 'patterns';
+    items: (Example | Pattern)[];
+    refresh: () => Promise<boolean>;
+    onSaved: () => void;
+    onSaveStart: () => void;
+  }
 
-  let editingId: number | null = null;
-  let adding = false;
-  let russian = '';
-  let english = '';
-  let pattern = '';
-  let error = '';
-  let saving = false;
+  let { wordId, senseId, kind, items, refresh, onSaved, onSaveStart }: Props = $props();
 
-  $: visibleItems = items.filter((item) => item.active || $editMode);
+  let editingId = $state<number | null>(null);
+  let adding = $state(false);
+  let russian = $state('');
+  let english = $state('');
+  let pattern = $state('');
+  let error = $state('');
+  let saving = $state(false);
+
+  let visibleItems = $derived(items.filter((item) => item.active || $editMode));
 
   function start(item?: Example | Pattern): void {
     editingId = item?.id ?? null;
@@ -69,7 +73,7 @@
     <div class="flex justify-between items-center mb-2">
       <h5 class="font-semibold text-sm capitalize">{kind}</h5>
       {#if $editMode}
-        <button class="btn btn-xs btn-outline" on:click={() => start()}>+ Add</button>
+        <button class="btn btn-xs btn-outline" onclick={() => start()}>+ Add</button>
       {/if}
     </div>
     <div class="space-y-2">
@@ -83,8 +87,8 @@
           {/if}
           {#if $editMode}
             <div class="flex gap-1 mt-1">
-              <button class="btn btn-ghost btn-xs" on:click={() => start(item)}>Edit</button>
-              <button class="btn btn-ghost btn-xs" on:click={() => toggle(item)}>
+              <button class="btn btn-ghost btn-xs" onclick={() => start(item)}>Edit</button>
+              <button class="btn btn-ghost btn-xs" onclick={() => toggle(item)}>
                 {item.active ? 'Archive' : 'Restore'}
               </button>
             </div>
@@ -94,7 +98,7 @@
     </div>
 
     {#if adding && $editMode}
-      <form class="mt-3 p-3 bg-base-200 rounded-lg space-y-2" on:submit|preventDefault={save}>
+      <form class="mt-3 p-3 bg-base-200 rounded-lg space-y-2" onsubmit={(event) => { event.preventDefault(); void save(); }}>
         {#if kind === 'examples'}
           <label class="field">
             <span>Russian example</span>
@@ -113,7 +117,7 @@
         {#if error}<p class="text-error text-sm" role="alert">{error}</p>{/if}
         <div class="flex gap-2">
           <button class="btn btn-primary btn-sm" disabled={saving}>Save</button>
-          <button class="btn btn-sm" type="button" disabled={saving} on:click={() => { adding = false; }}>
+          <button class="btn btn-sm" type="button" disabled={saving} onclick={() => { adding = false; }}>
             Cancel
           </button>
         </div>

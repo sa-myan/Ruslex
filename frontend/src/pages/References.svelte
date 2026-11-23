@@ -5,15 +5,19 @@
   import { errorMessage } from '../lib/errors';
   import type { Entry, Page, RefPage, Source } from '../lib/types';
 
-  export let wordId: number;
+  interface Props {
+    wordId: number;
+  }
 
-  let entry: Entry | null = null;
-  let pages: Page<RefPage> | null = null;
-  let sources: Page<Source> | null = null;
-  let pageNumber = 1;
-  let sourcePageNumber = 1;
-  let selected: RefPage | null = null;
-  let error = '';
+  let { wordId }: Props = $props();
+
+  let entry = $state<Entry | null>(null);
+  let pages = $state<Page<RefPage> | null>(null);
+  let sources = $state<Page<Source> | null>(null);
+  let pageNumber = $state(1);
+  let sourcePageNumber = $state(1);
+  let selected = $state<RefPage | null>(null);
+  let error = $state('');
   let sourceSequence = 0;
   let pageSequence = 0;
 
@@ -65,7 +69,7 @@
   }
 </script>
 
-<button class="btn btn-ghost btn-sm mb-5" on:click={() => navigate(`/word/${wordId}`)}>← Entry</button>
+<button class="btn btn-ghost btn-sm mb-5" onclick={() => navigate(`/word/${wordId}`)}>← Entry</button>
 <p class="kicker">Source evidence</p>
 <h2 class="text-3xl font-bold mt-2 mb-2">References</h2>
 {#if entry}
@@ -80,12 +84,12 @@
   <section class="surface p-5">
     <h3 class="font-bold mb-3">Pages</h3>
     {#if selected}
-      <button class="btn btn-ghost btn-sm" on:click={() => choose(null)}>Clear filter ×</button>
+      <button class="btn btn-ghost btn-sm" onclick={() => choose(null)}>Clear filter ×</button>
     {/if}
     {#each pages?.items ?? [] as page (page.page_id)}
       <button
         class={`block w-full text-left border-b border-base-300 p-3 hover:bg-base-200 ${selected?.page_id === page.page_id ? 'bg-primary/10' : ''}`}
-        on:click={() => choose(page)}
+        onclick={() => choose(page)}
       >
         <strong class="block">{page.title}</strong>
         <small>PDF {page.pdf_page} · printed {page.printed_page}</small>
@@ -94,9 +98,9 @@
     {/each}
     {#if pages && pages.pages > 1}
       <div class="flex gap-2 mt-4 items-center">
-        <button class="btn btn-xs" disabled={pageNumber <= 1} on:click={() => { pageNumber--; void loadPages(); }}>←</button>
+        <button class="btn btn-xs" disabled={pageNumber <= 1} onclick={() => { pageNumber--; void loadPages(); }}>←</button>
         {pageNumber}/{pages.pages}
-        <button class="btn btn-xs" disabled={pageNumber >= pages.pages} on:click={() => { pageNumber++; void loadPages(); }}>→</button>
+        <button class="btn btn-xs" disabled={pageNumber >= pages.pages} onclick={() => { pageNumber++; void loadPages(); }}>→</button>
       </div>
     {/if}
   </section>
@@ -112,11 +116,11 @@
     {/each}
     {#if sources && sources.pages > 1}
       <div class="flex gap-2 mt-4 items-center">
-        <button class="btn btn-sm" disabled={sourcePageNumber <= 1} on:click={() => { sourcePageNumber--; void loadSources(); }}>
+        <button class="btn btn-sm" disabled={sourcePageNumber <= 1} onclick={() => { sourcePageNumber--; void loadSources(); }}>
           ← Previous
         </button>
         {sourcePageNumber}/{sources.pages}
-        <button class="btn btn-sm" disabled={sourcePageNumber >= sources.pages} on:click={() => { sourcePageNumber++; void loadSources(); }}>
+        <button class="btn btn-sm" disabled={sourcePageNumber >= sources.pages} onclick={() => { sourcePageNumber++; void loadSources(); }}>
           Next →
         </button>
       </div>

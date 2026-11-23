@@ -5,14 +5,14 @@
   import { errorMessage } from '../lib/errors';
   import type { Metadata } from '../lib/types';
 
-  let metadata: Metadata | null = null;
-  let lemma = '';
-  let pos = 'NOUN';
-  let entryType = 'word';
-  let aspect = '';
-  let animacy = '';
-  let busy = false;
-  let error = '';
+  let metadata = $state<Metadata | null>(null);
+  let lemma = $state('');
+  let pos = $state('NOUN');
+  let entryType = $state('word');
+  let aspect = $state('');
+  let animacy = $state('');
+  let busy = $state(false);
+  let error = $state('');
 
   onMount(() => {
     void request<Metadata>('/api/meta')
@@ -44,7 +44,7 @@
 <p class="kicker">Editor</p>
 <h2 class="text-3xl font-bold mt-2 mb-6">Add a dictionary entry</h2>
 <section class="surface p-6 max-w-2xl">
-  <form class="space-y-4" on:submit|preventDefault={save}>
+  <form class="space-y-4" onsubmit={(event) => { event.preventDefault(); void save(); }}>
     <label class="field">
       <span>Russian lemma or expression</span>
       <input class="russian" bind:value={lemma} required maxlength="120" />

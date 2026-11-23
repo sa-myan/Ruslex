@@ -1,17 +1,22 @@
 <script lang="ts">
   import { currentPath, navigate } from '../lib/navigation';
 
-  export let href: string;
-  export let title: string;
-  export let symbol = '•';
-  export let onNavigate: () => void = () => {};
+  interface Props {
+    href: string;
+    title: string;
+    onNavigate?: () => void;
+    symbol?: string;
+  }
+
+  let { href, title, onNavigate = () => {}, symbol = '•' }: Props = $props();
+
 </script>
 
 <a
   {href}
   aria-current={$currentPath === href ? 'page' : undefined}
   class={`flex items-center gap-3 rounded-lg px-4 py-3 hover:bg-base-200 transition-colors ${$currentPath === href ? 'bg-primary/10 font-semibold' : ''}`}
-  on:click={(event) => {
+  onclick={(event) => {
     event.preventDefault();
     onNavigate();
     navigate(href);

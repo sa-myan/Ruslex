@@ -4,8 +4,8 @@
   import { errorMessage } from '../lib/errors';
   import type { Stats } from '../lib/types';
 
-  let stats: Stats | null = null;
-  let error = '';
+  let stats = $state<Stats | null>(null);
+  let error = $state('');
 
   onMount(() => {
     void request<Stats>('/api/stats')

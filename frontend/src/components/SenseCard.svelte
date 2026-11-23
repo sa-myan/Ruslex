@@ -7,19 +7,23 @@
   import RelationList from './RelationList.svelte';
   import TagPicker from './TagPicker.svelte';
 
-  export let entry: Entry;
-  export let sense: Sense;
-  export let refresh: () => Promise<boolean>;
-  export let availableTags: Tag[] = [];
-  export let reloadTags: () => Promise<void>;
-  export let onSaved: () => void;
-  export let onSaveStart: () => void;
+  interface Props {
+    entry: Entry;
+    sense: Sense;
+    refresh: () => Promise<boolean>;
+    availableTags?: Tag[];
+    reloadTags: () => Promise<void>;
+    onSaved: () => void;
+    onSaveStart: () => void;
+  }
 
-  let editing = false;
-  let meaning = '';
-  let description = '';
-  let busyTag = false;
-  let error = '';
+  let { entry, sense, refresh, availableTags = [], reloadTags, onSaved, onSaveStart }: Props = $props();
+
+  let editing = $state(false);
+  let meaning = $state('');
+  let description = $state('');
+  let busyTag = $state(false);
+  let error = $state('');
 
   function start() {
     editing = true;
@@ -104,8 +108,8 @@
     </div>
     {#if $editMode}
       <div class="flex gap-1">
-        <button class="btn btn-xs btn-outline" on:click={start}>Edit</button>
-        <button class="btn btn-xs btn-ghost" on:click={active}>{sense.active ? 'Archive' : 'Restore'}</button>
+        <button class="btn btn-xs btn-outline" onclick={start}>Edit</button>
+        <button class="btn btn-xs btn-ghost" onclick={active}>{sense.active ? 'Archive' : 'Restore'}</button>
       </div>
     {/if}
   </div>
@@ -119,7 +123,7 @@
         <span class="badge badge-outline badge-sm">
           {tag.name}
           {#if $editMode}
-            <button class="ml-1" aria-label={`Remove ${tag.name} tag`} disabled={busyTag} on:click={() => removeTag(tag.id)}>×</button>
+            <button class="ml-1" aria-label={`Remove ${tag.name} tag`} disabled={busyTag} onclick={() => removeTag(tag.id)}>×</button>
           {/if}
         </span>
       {/each}
@@ -127,11 +131,11 @@
   {/if}
 
   {#if editing && $editMode}
-    <form class="bg-base-200 p-3 rounded-lg mt-3 space-y-2" on:submit|preventDefault={save}>
+    <form class="bg-base-200 p-3 rounded-lg mt-3 space-y-2" onsubmit={(event) => { event.preventDefault(); void save(); }}>
       <label class="field"><span>Meaning (English)</span><textarea bind:value={meaning} required></textarea></label>
       <label class="field"><span>Description</span><textarea bind:value={description}></textarea></label>
       <button class="btn btn-primary btn-sm">Save</button>
-      <button type="button" class="btn btn-sm ml-2" on:click={() => editing = false}>Cancel</button>
+      <button type="button" class="btn btn-sm ml-2" onclick={() => editing = false}>Cancel</button>
     </form>
   {/if}
 

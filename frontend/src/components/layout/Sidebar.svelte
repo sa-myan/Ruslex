@@ -3,11 +3,16 @@
   import { theme, toggleTheme } from '../../lib/theme';
   import NavLink from '../NavLink.svelte';
 
-  export let isOpen = false;
-  export let isDesktop = false;
-  export let onNavigate: (path: string) => void;
-  export let onClose: () => void;
-  export let onLogout: () => Promise<void>;
+  interface Props {
+    onNavigate: (path: string) => void;
+    onClose: () => void;
+    onLogout: () => Promise<void>;
+    isOpen?: boolean;
+    isDesktop?: boolean;
+  }
+
+  let { onNavigate, onClose, onLogout, isOpen = false, isDesktop = false }: Props = $props();
+
 </script>
 
 <aside
@@ -22,7 +27,7 @@
     <a
       href="/"
       class="flex items-center gap-3 min-w-0"
-      on:click={(event) => { event.preventDefault(); onNavigate('/'); }}
+      onclick={(event) => { event.preventDefault(); onNavigate('/'); }}
     >
       <span class="flex shrink-0 items-center justify-center w-11 h-11 rounded-xl bg-primary text-primary-content font-bold text-2xl">Я</span>
       <div class="min-w-0">
@@ -30,7 +35,7 @@
         <p class="text-xs opacity-60">Language workspace</p>
       </div>
     </a>
-    <button class="btn btn-ghost btn-sm sidebar-close" aria-label="Close menu" on:click={onClose}>
+    <button class="btn btn-ghost btn-sm sidebar-close" aria-label="Close menu" onclick={onClose}>
       ✕
     </button>
   </div>
@@ -63,7 +68,7 @@
       <span class="text-sm">Appearance</span>
       <button
         class="btn btn-outline btn-sm"
-        on:click={toggleTheme}
+        onclick={toggleTheme}
         aria-label={`Switch to ${$theme === 'dark' ? 'light' : 'dark'} theme`}
       >
         {$theme === 'dark' ? '☀ Light' : '☾ Dark'}
@@ -75,9 +80,9 @@
         {#if $user.is_staff}
           <a href="/admin/" class="btn btn-outline btn-sm w-full">Django Admin</a>
         {/if}
-        <button class="btn btn-ghost btn-sm w-full" on:click={onLogout}>Sign out</button>
+        <button class="btn btn-ghost btn-sm w-full" onclick={onLogout}>Sign out</button>
       {:else}
-        <button class="btn btn-outline btn-sm w-full" on:click={() => onNavigate('/login')}>Sign in</button>
+        <button class="btn btn-outline btn-sm w-full" onclick={() => onNavigate('/login')}>Sign in</button>
       {/if}
     </div>
     <div class="text-xs opacity-60">SQLite · Django · Svelte</div>

@@ -1,21 +1,25 @@
 <script lang="ts">
   import type { Sense, Tag } from '../lib/types';
 
-  export let sense: Sense;
-  export let availableTags: Tag[];
-  export let busy = false;
-  export let onAttach: (name: string, category: string) => Promise<boolean>;
-  export let onCreate: (name: string, category: string) => Promise<boolean>;
+  interface Props {
+    sense: Sense;
+    availableTags: Tag[];
+    onAttach: (name: string, category: string) => Promise<boolean>;
+    onCreate: (name: string, category: string) => Promise<boolean>;
+    busy?: boolean;
+  }
 
-  let query = '';
-  let newTagName = '';
-  let category = 'semantic';
+  let { sense, availableTags, onAttach, onCreate, busy = false }: Props = $props();
 
-  $: suggestions = availableTags
+  let query = $state('');
+  let newTagName = $state('');
+  let category = $state('semantic');
+
+  let suggestions = $derived(availableTags
     .filter((tag) => !sense.tags.some((current) => current.id === tag.id))
     .filter((tag) => `${tag.name} ${tag.category}`.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => (b.sense_count ?? 0) - (a.sense_count ?? 0) || a.name.localeCompare(b.name))
-    .slice(0, 8);
+    .slice(0, 8));
 
   async function attach(tag: Tag): Promise<void> {
     if (await onAttach(tag.name, tag.category)) query = '';
@@ -45,7 +49,7 @@
         class="badge badge-outline cursor-pointer hover:bg-base-200"
         title={`${tag.category} tag — ${tag.sense_count ?? 0} senses`}
         disabled={busy}
-        on:click={() => attach(tag)}
+        onclick={() => attach(tag)}
       >
         + {tag.name} <span class="opacity-60">({tag.category})</span>
       </button>
@@ -56,7 +60,7 @@
   </div>
   <details class="text-sm">
     <summary class="cursor-pointer text-primary">Create a new tag</summary>
-    <form class="mt-2 flex gap-2 flex-wrap items-center" on:submit|preventDefault={create}>
+    <form class="mt-2 flex gap-2 flex-wrap items-center" onsubmit={(event) => { event.preventDefault(); void create(); }}>
       <input
         class="input input-bordered input-sm"
         placeholder="New tag name"

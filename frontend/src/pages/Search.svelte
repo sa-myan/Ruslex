@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { request } from '../lib/http';
   import { navigate } from '../lib/navigation';
   import { editMode, reviewMode } from '../lib/session';
@@ -10,24 +10,24 @@
   const statuses = ['visible', 'all', 'unreviewed', 'kept', 'followup', 'hidden'];
   const tagCategories = ['grammatical', 'semantic', 'usage'];
 
-  let query = new URLSearchParams(window.location.search).get('q') ?? '';
-  let status = 'visible';
-  let page = 1;
-  let pos = '';
-  let kind = '';
-  let bookId = '';
-  let pageFrom = '';
-  let pageTo = '';
-  let pageKind = 'pdf';
-  let selectedTags: number[] = [];
+  let query = $state(new URLSearchParams(window.location.search).get('q') ?? '');
+  let status = $state('visible');
+  let page = $state(1);
+  let pos = $state('');
+  let kind = $state('');
+  let bookId = $state('');
+  let pageFrom = $state('');
+  let pageTo = $state('');
+  let pageKind = $state('pdf');
+  let selectedTags = $state<number[]>([]);
 
-  let tags: Tag[] = [];
-  let books: Book[] = [];
-  let metadata: Metadata | null = null;
-  let results: Page<Summary> | null = null;
-  let busy = false;
-  let error = '';
-  let advanced = false;
+  let tags = $state<Tag[]>([]);
+  let books = $state<Book[]>([]);
+  let metadata = $state<Metadata | null>(null);
+  let results = $state<Page<Summary> | null>(null);
+  let busy = $state(false);
+  let error = $state('');
+  let advanced = $state(false);
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
@@ -121,7 +121,12 @@
   }
 
   // Hidden entries are never requested when Review Mode is disabled.
-  $: if (!$reviewMode && status !== 'visible') changeMode();
+  $effect(() => {
+    if (!$reviewMode && status !== 'visible') {
+      // Run the reset without subscribing to its incidental synchronous reads.
+      untrack(changeMode);
+    }
+  });
 
   function toggleTag(id: number): void {
     selectedTags = selectedTags.includes(id)
@@ -146,7 +151,7 @@
     aria-label="Search Russian or English"
     placeholder="Search Russian or English…"
     bind:value={query}
-    on:input={schedule}
+    oninput={schedule}
   />
   {#if $reviewMode}
     <div class="flex flex-wrap items-center gap-2 text-sm">
@@ -154,27 +159,27 @@
       {#each statuses as option}
         <button
           class={`btn btn-sm ${status === option ? 'btn-primary' : 'btn-ghost'}`}
-          on:click={() => { status = option; schedule(); }}
+          onclick={() => { status = option; schedule(); }}
         >{option}</button>
       {/each}
     </div>
   {/if}
 
-  <button class="btn btn-sm btn-ghost" aria-expanded={advanced} on:click={() => { advanced = !advanced; }}>
+  <button class="btn btn-sm btn-ghost" aria-expanded={advanced} onclick={() => { advanced = !advanced; }}>
     {advanced ? '▾' : '▸'} Filters: book, page, tags, grammar
   </button>
   {#if advanced}
     <div class="grid md:grid-cols-2 gap-4 pt-3 border-t border-base-300">
       <label class="field">
         <span>Book</span>
-        <select class="select select-bordered" bind:value={bookId} on:change={schedule}>
+        <select class="select select-bordered" bind:value={bookId} onchange={schedule}>
           <option value="">Any book</option>
           {#each books as book}<option value={String(book.id)}>{book.title} {book.edition}</option>{/each}
         </select>
       </label>
       <label class="field">
         <span>Part of speech</span>
-        <select bind:value={pos} on:change={schedule}>
+        <select bind:value={pos} onchange={schedule}>
           <option value="">Any</option>
           {#each metadata?.parts_of_speech ?? [] as part}
             <option value={part.code}>{part.label}</option>
@@ -183,7 +188,7 @@
       </label>
       <label class="field">
         <span>Entry type</span>
-        <select bind:value={kind} on:change={schedule}>
+        <select bind:value={kind} onchange={schedule}>
           <option value="">All</option>
           <option value="word">Words</option>
           <option value="expression">Expressions</option>
@@ -191,18 +196,18 @@
       </label>
       <label class="field">
         <span>Page numbering</span>
-        <select bind:value={pageKind} on:change={schedule}>
+        <select bind:value={pageKind} onchange={schedule}>
           <option value="pdf">PDF page</option>
           <option value="printed">Printed page</option>
         </select>
       </label>
       <label class="field">
         <span>From page</span>
-        <input type="text" inputmode="numeric" bind:value={pageFrom} on:input={schedule} />
+        <input type="text" inputmode="numeric" bind:value={pageFrom} oninput={schedule} />
       </label>
       <label class="field">
         <span>To page</span>
-        <input type="text" inputmode="numeric" bind:value={pageTo} on:input={schedule} />
+        <input type="text" inputmode="numeric" bind:value={pageTo} oninput={schedule} />
       </label>
     </div>
 
@@ -213,7 +218,7 @@
           {#each tags.filter((tag) => tag.category === category) as tag}
             <button
               class={`badge cursor-pointer ${selectedTags.includes(tag.id) ? 'badge-primary' : 'badge-outline'}`}
-              on:click={() => toggleTag(tag.id)}
+              onclick={() => toggleTag(tag.id)}
             >{tag.name} · {tag.word_count}</button>
           {/each}
         </div>
@@ -235,7 +240,7 @@
 {#if error}
   <div class="alert alert-error mb-4" role="alert">
     {error}
-    <button class="btn btn-sm" on:click={() => load()}>Retry</button>
+    <button class="btn btn-sm" onclick={() => load()}>Retry</button>
   </div>
 {/if}
 
@@ -250,7 +255,7 @@
     <a
       href={`/word/${word.id}`}
       class="block p-4 md:p-5 hover:bg-base-200/50 transition-colors"
-      on:click={(event) => { event.preventDefault(); navigate(`/word/${word.id}`); }}
+      onclick={(event) => { event.preventDefault(); navigate(`/word/${word.id}`); }}
     >
       <div class="flex gap-3 items-center flex-wrap">
         <strong class="russian text-xl">{word.lemma}</strong>
@@ -271,15 +276,15 @@
 
 {#if results && results.pages > 1}
   <div class="join flex justify-center mt-5">
-    <button class="btn join-item" disabled={page <= 1} on:click={() => { page--; void load(); }}>
+    <button class="btn join-item" disabled={page <= 1} onclick={() => { page--; void load(); }}>
       Previous
     </button>
     <button class="btn join-item btn-disabled">{page} / {results.pages}</button>
-    <button class="btn join-item" disabled={page >= results.pages} on:click={() => { page++; void load(); }}>
+    <button class="btn join-item" disabled={page >= results.pages} onclick={() => { page++; void load(); }}>
       Next
     </button>
   </div>
 {/if}
 {#if $editMode}
-  <button class="btn btn-primary mt-6" on:click={() => navigate('/new')}>+ Add entry</button>
+  <button class="btn btn-primary mt-6" onclick={() => navigate('/new')}>+ Add entry</button>
 {/if}

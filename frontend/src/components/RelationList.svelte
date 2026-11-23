@@ -7,33 +7,37 @@
   import type { Entry, EntryReference, Relation, Sense } from '../lib/types';
   import EntryPicker from './EntryPicker.svelte';
 
-  export let entry: Entry;
-  export let scope: number | null = null;
-  export let refresh: () => Promise<boolean>;
-  export let onSaved: () => void;
-  export let onSaveStart: () => void;
+  interface Props {
+    entry: Entry;
+    scope?: number | null;
+    refresh: () => Promise<boolean>;
+    onSaved: () => void;
+    onSaveStart: () => void;
+  }
+
+  let { entry, scope = null, refresh, onSaved, onSaveStart }: Props = $props();
 
   const relationshipTypes = ['aspect_pair', 'synonym', 'antonym', 'derivation', 'related'];
 
-  let editing = false;
-  let editingId: number | null = null;
-  let selected: EntryReference | null = null;
-  let relationType = 'related';
-  let ownSense: number | null = null;
-  let otherSense: number | null = null;
-  let otherSenses: Sense[] = [];
-  let notes = '';
-  let error = '';
+  let editing = $state(false);
+  let editingId = $state<number | null>(null);
+  let selected = $state<EntryReference | null>(null);
+  let relationType = $state('related');
+  let ownSense = $state<number | null>(null);
+  let otherSense = $state<number | null>(null);
+  let otherSenses = $state<Sense[]>([]);
+  let notes = $state('');
+  let error = $state('');
 
   let lookupController: AbortController | undefined;
   let lookupVersion = 0;
 
-  $: scoped = entry.relations.filter((relation) => {
+  let scoped = $derived(entry.relations.filter((relation) => {
     const senseId = relation.direction === 'outgoing'
       ? relation.source_sense_id
       : relation.target_sense_id;
     return senseId === scope;
-  });
+  }));
 
   onDestroy(() => lookupController?.abort());
 
@@ -120,7 +124,7 @@
         {scope === null ? 'Entry-wide relationships' : 'Related to this meaning'}
       </h4>
       {#if $editMode}
-        <button class="btn btn-xs btn-outline" on:click={() => { editing ? editing = false : void start(); }}>
+        <button class="btn btn-xs btn-outline" onclick={() => { editing ? editing = false : void start(); }}>
           {editing ? 'Cancel' : '+ Link'}
         </button>
       {/if}
@@ -137,7 +141,7 @@
         <a
           class="link link-primary russian font-semibold"
           href={`/word/${relation.other_id}`}
-          on:click={(event) => {
+          onclick={(event) => {
             event.preventDefault();
             navigate(`/word/${relation.other_id}`);
           }}
@@ -149,14 +153,14 @@
           <small class="opacity-60">{relation.notes}</small>
         {/if}
         {#if $editMode}
-          <button class="btn btn-ghost btn-xs" on:click={() => start(relation)}>Edit</button>
-          <button class="btn btn-ghost btn-xs" on:click={() => remove(relation)}>Remove</button>
+          <button class="btn btn-ghost btn-xs" onclick={() => start(relation)}>Edit</button>
+          <button class="btn btn-ghost btn-xs" onclick={() => remove(relation)}>Remove</button>
         {/if}
       </div>
     {/each}
 
     {#if editing && $editMode}
-      <form class="space-y-3 border-t border-base-300 pt-3" on:submit|preventDefault={save}>
+      <form class="space-y-3 border-t border-base-300 pt-3" onsubmit={(event) => { event.preventDefault(); void save(); }}>
         <div class="field">
           <span>Related entry</span>
           <EntryPicker {selected} onSelect={pick} />

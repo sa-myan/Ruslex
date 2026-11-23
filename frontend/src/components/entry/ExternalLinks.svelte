@@ -4,15 +4,19 @@
   import { dictionaryLinks } from '../../lib/externalLinks';
   import type { Entry, ExternalLink } from '../../lib/types';
 
-  export let entry: Entry;
-  export let saveChange: (action: () => Promise<unknown>) => Promise<boolean>;
+  interface Props {
+    entry: Entry;
+    saveChange: (action: () => Promise<unknown>) => Promise<boolean>;
+  }
 
-  let editing = false;
-  let editingId: number | null = null;
-  let label = '';
-  let url = '';
+  let { entry, saveChange }: Props = $props();
 
-  $: standardLinks = dictionaryLinks(entry.lemma);
+  let editing = $state(false);
+  let editingId = $state<number | null>(null);
+  let label = $state('');
+  let url = $state('');
+
+  let standardLinks = $derived(dictionaryLinks(entry.lemma));
 
   function start(link?: ExternalLink): void {
     editingId = link?.id ?? null;
@@ -37,7 +41,7 @@
   <div class="panel-header">
     <h3 class="text-xl font-semibold">External dictionaries</h3>
     {#if $editMode}
-      <button class="btn btn-sm btn-outline" on:click={() => start()}>+ Custom link</button>
+      <button class="btn btn-sm btn-outline" onclick={() => start()}>+ Custom link</button>
     {/if}
   </div>
   <div class="flex flex-wrap gap-x-5 gap-y-3">
@@ -54,14 +58,14 @@
           {link.label} ↗
         </a>
         {#if $editMode}
-          <button class="btn btn-ghost btn-xs" on:click={() => start(link)}>Edit</button>
-          <button class="btn btn-ghost btn-xs" on:click={() => remove(link.id)}>Remove</button>
+          <button class="btn btn-ghost btn-xs" onclick={() => start(link)}>Edit</button>
+          <button class="btn btn-ghost btn-xs" onclick={() => remove(link.id)}>Remove</button>
         {/if}
       </div>
     {/each}
   </div>
   {#if editing && $editMode}
-    <form class="mt-4 space-y-2" on:submit|preventDefault={save}>
+    <form class="mt-4 space-y-2" onsubmit={(event) => { event.preventDefault(); void save(); }}>
       <label class="field">
         <span>Label</span>
         <input bind:value={label} required maxlength="80" />
@@ -71,7 +75,7 @@
         <input type="url" bind:value={url} required maxlength="2048" />
       </label>
       <button class="btn btn-primary btn-sm">Save link</button>
-      <button class="btn btn-sm ml-2" type="button" on:click={() => editing = false}>Cancel</button>
+      <button class="btn btn-sm ml-2" type="button" onclick={() => editing = false}>Cancel</button>
     </form>
   {/if}
 </section>

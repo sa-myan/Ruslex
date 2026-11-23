@@ -9,11 +9,11 @@
   const actions: Status[] = ['kept', 'followup', 'hidden', 'unreviewed'];
   const filters = ['unreviewed', 'followup', 'kept', 'hidden', 'all'];
 
-  let filter = 'unreviewed';
-  let after = 0;
-  let batch: ReviewNext | null = null;
-  let busy = false;
-  let error = '';
+  let filter = $state('unreviewed');
+  let after = $state(0);
+  let batch = $state<ReviewNext | null>(null);
+  let busy = $state(false);
+  let error = $state('');
   let sequence = 0;
 
   onMount(() => { void load(); });
@@ -76,7 +76,7 @@
     <div class="flex flex-wrap items-center justify-between gap-2 mb-5">
       <label class="field">
         <span>Review queue</span>
-        <select bind:value={filter} on:change={changeFilter}>
+        <select bind:value={filter} onchange={changeFilter}>
           {#each filters as option}<option value={option}>{option}</option>{/each}
         </select>
       </label>
@@ -88,7 +88,7 @@
       <h3 class="russian text-3xl font-bold">
         {batch.word.lemma} <span class="text-base opacity-50">{batch.word.pos}</span>
       </h3>
-      <button class="link link-primary my-3" on:click={openEntry}>
+      <button class="link link-primary my-3" onclick={openEntry}>
         Open complete entry ↗
       </button>
       <div class="flex flex-wrap gap-2 my-5">
@@ -96,10 +96,10 @@
           <button
             class={`btn ${action === 'kept' ? 'btn-success' : action === 'hidden' ? 'btn-error' : 'btn-outline'}`}
             disabled={busy}
-            on:click={() => choose(action)}
+            onclick={() => choose(action)}
           >{action}</button>
         {/each}
-        <button class="btn btn-ghost" disabled={busy} on:click={skip}>Skip →</button>
+        <button class="btn btn-ghost" disabled={busy} onclick={skip}>Skip →</button>
       </div>
       {#each batch.sources as source}
         <div class="border-t border-base-300 py-2">

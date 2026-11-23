@@ -1,10 +1,34 @@
 # Ruslex frontend developer guide
 
 The Svelte frontend is deliberately a small client-rendered application. It does not need
-SvelteKit, a frontend API server, or a custom state-management framework. Most views
-use Svelte 5's **supported legacy component syntax** (`export let`, `$:` and `on:`).
-Do not mix runes and legacy syntax within a component just to make it appear newer.
-A separate, tested migration to runes may be considered later.
+SvelteKit, a frontend API server, or a custom state-management framework. **All Svelte
+components use Svelte 5 runes mode** (`$props`, `$state`, `$derived`, and `$effect` where
+necessary) and event-handler attributes (`onclick`, `onsubmit`, etc.). These are supported
+by the application's existing Svelte 5 dependency; no framework upgrade is required.
+
+## Modern Svelte conventions
+
+- Declare component inputs in a typed `Props` interface and destructure them with `$props()`.
+  Optional props with defaults must remain optional in the interface.
+- Use `$state` for **mutable UI state** (input values, open panels, fetched results).
+  Keep request versions, abort controllers, and timers as ordinary local variables.
+- Use `$derived` for **pure computed values** (visible senses, filtered relations,
+  available tags). Avoid copying computed data into separate mutable state.
+- Use `$effect` only for synchronization with external state such as `document.body`,
+  or a narrowly scoped mode transition. Effects are **not** a substitute for `$derived`.
+- Keep existing Svelte stores in `lib/session.ts`, `lib/theme.ts`, and `lib/navigation.ts`.
+  The `$store` subscription syntax is supported in runes-mode components. There is no
+  need to rewrite stable cross-component state while migrating component syntax.
+- Use `onclick`, `oninput`, `onchange`, and `onsubmit`. For forms, call
+  `event.preventDefault()` explicitly before invoking the async save function.
+- `onMount` and `onDestroy` remain supported and useful for one-time initialization,
+  browser listeners and cleanup. Do not add effects just to replace them stylistically.
+- Keep network request cancellation, confirmation, and error reporting unchanged.
+  Runes are a reactivity change, **not** a reason to restructure business logic.
+
+**Regression check:** `npm run check && npm test && npm run build`.
+The `svelte5-components.test.ts` test compiles each `.svelte` file with Svelte's own
+compiler and fails if legacy component syntax returns.
 
 ## Source layout
 

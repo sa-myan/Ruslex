@@ -15,16 +15,18 @@
   import NewEntry from './pages/NewEntry.svelte';
   import Login from './pages/Login.svelte';
 
-  let ready = false;
-  let menuOpen = false;
-  let desktopSidebar = false;
-  let headerVisible = true;
-  let error = '';
-  let menuButton: HTMLButtonElement;
+  let ready = $state(false);
+  let menuOpen = $state(false);
+  let desktopSidebar = $state(false);
+  let headerVisible = $state(true);
+  let error = $state('');
+  let menuButton = $state<HTMLButtonElement>();
 
-  $: path = $currentPath;
-  $: wordMatch = path.match(/^\/word\/(\d+)(\/references)?$/);
-  $: document.body.classList.toggle('ruslex-drawer-open', menuOpen && !desktopSidebar);
+  let path = $derived($currentPath);
+  let wordMatch = $derived(path.match(/^\/word\/(\d+)(\/references)?$/));
+  $effect(() => {
+    document.body.classList.toggle('ruslex-drawer-open', menuOpen && !desktopSidebar);
+  });
 
   function closeMenu(): void {
     const shouldRestoreFocus = menuOpen && !desktopSidebar;
@@ -127,7 +129,7 @@
 
 <div class="app-shell bg-base-200/70">
   {#if menuOpen && !desktopSidebar}
-    <button class="app-backdrop" aria-label="Close navigation" on:click={closeMenu}></button>
+    <button class="app-backdrop" aria-label="Close navigation" onclick={closeMenu}></button>
   {/if}
 
   <Sidebar
@@ -148,13 +150,13 @@
             aria-label="Open navigation menu"
             aria-controls="ruslex-navigation"
             aria-expanded={menuOpen}
-            on:click={openMenu}
+            onclick={openMenu}
           >☰</button>
           <span class="font-semibold opacity-80 truncate">Russian language desk</span>
         </div>
         <button
           class="btn btn-ghost btn-sm shrink-0"
-          on:click={toggleTheme}
+          onclick={toggleTheme}
           aria-label={`Switch to ${$theme === 'dark' ? 'light' : 'dark'} theme`}
           title={`Switch to ${$theme === 'dark' ? 'light' : 'dark'} theme`}
         >{$theme === 'dark' ? '☀ Light' : '☾ Dark'}</button>
@@ -180,7 +182,7 @@
       {:else if path === '/login'}
         <Login />
       {:else}
-        <div class="surface p-8">Page not found. <button class="link" on:click={() => goTo('/')}>Return to dictionary</button></div>
+        <div class="surface p-8">Page not found. <button class="link" onclick={() => goTo('/')}>Return to dictionary</button></div>
       {/if}
     </main>
   </div>

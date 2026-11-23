@@ -5,16 +5,20 @@
   import type { Component, Entry, EntryReference } from '../../lib/types';
   import EntryPicker from '../EntryPicker.svelte';
 
-  export let entry: Entry;
-  export let saveChange: (action: () => Promise<unknown>) => Promise<boolean>;
+  interface Props {
+    entry: Entry;
+    saveChange: (action: () => Promise<unknown>) => Promise<boolean>;
+  }
 
-  let editing = false;
-  let editingId: number | null = null;
-  let selected: EntryReference | null = null;
-  let position = 1;
-  let surface = '';
-  let notes = '';
-  let error = '';
+  let { entry, saveChange }: Props = $props();
+
+  let editing = $state(false);
+  let editingId = $state<number | null>(null);
+  let selected = $state<EntryReference | null>(null);
+  let position = $state(1);
+  let surface = $state('');
+  let notes = $state('');
+  let error = $state('');
 
   function start(component?: Component): void {
     editingId = component?.id ?? null;
@@ -56,7 +60,7 @@
     <div class="panel-header">
       <h3 class="text-xl font-semibold">Constituent words</h3>
       {#if $editMode}
-        <button class="btn btn-outline btn-sm" on:click={() => start()}>+ Add</button>
+        <button class="btn btn-outline btn-sm" onclick={() => start()}>+ Add</button>
       {/if}
     </div>
     {#each entry.components as component (component.id)}
@@ -65,18 +69,18 @@
         <a
           class="link link-primary"
           href={`/word/${component.word_id}`}
-          on:click={(event) => { event.preventDefault(); navigate(`/word/${component.word_id}`); }}
+          onclick={(event) => { event.preventDefault(); navigate(`/word/${component.word_id}`); }}
         >{component.word_lemma}</a>
         <span>{component.surface}</span>
         {#if $editMode}
-          <button class="btn btn-xs" on:click={() => start(component)}>Edit</button>
-          <button class="btn btn-xs" on:click={() => remove(component.id)}>Remove</button>
+          <button class="btn btn-xs" onclick={() => start(component)}>Edit</button>
+          <button class="btn btn-xs" onclick={() => remove(component.id)}>Remove</button>
         {/if}
       </div>
     {/each}
 
     {#if editing && $editMode}
-      <form class="mt-4 space-y-2" on:submit|preventDefault={save}>
+      <form class="mt-4 space-y-2" onsubmit={(event) => { event.preventDefault(); void save(); }}>
         <div class="field">
           <span>Constituent word</span>
           <EntryPicker {selected} onSelect={(item) => { selected = item; }} />
@@ -95,7 +99,7 @@
         </label>
         {#if error}<p class="text-error text-sm" role="alert">{error}</p>{/if}
         <button class="btn btn-primary">Save constituent</button>
-        <button class="btn ml-2" type="button" on:click={() => editing = false}>Cancel</button>
+        <button class="btn ml-2" type="button" onclick={() => editing = false}>Cancel</button>
       </form>
     {/if}
   </section>

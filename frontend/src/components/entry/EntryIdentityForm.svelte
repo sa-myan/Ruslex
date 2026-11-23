@@ -1,17 +1,21 @@
 <script lang="ts">
   import type { Entry, Metadata } from '../../lib/types';
 
-  export let entry: Entry;
-  export let metadata: Metadata | null;
-  export let onSave: (fields: Record<string, unknown>) => Promise<boolean>;
-  export let onCancel: () => void;
+  interface Props {
+    entry: Entry;
+    metadata: Metadata | null;
+    onSave: (fields: Record<string, unknown>) => Promise<boolean>;
+    onCancel: () => void;
+  }
 
-  let lemma = entry.lemma;
-  let pos = entry.pos;
-  let entryType = entry.entry_type;
-  let aspect = entry.aspect ?? '';
-  let animacy = entry.animacy ?? '';
-  let saving = false;
+  let { entry, metadata, onSave, onCancel }: Props = $props();
+
+  let lemma = $state(entry.lemma);
+  let pos = $state(entry.pos);
+  let entryType = $state(entry.entry_type);
+  let aspect = $state(entry.aspect ?? '');
+  let animacy = $state(entry.animacy ?? '');
+  let saving = $state(false);
 
   async function save(): Promise<void> {
     saving = true;
@@ -30,7 +34,7 @@
   }
 </script>
 
-<form class="surface p-5 mb-4 space-y-3" on:submit|preventDefault={save}>
+<form class="surface p-5 mb-4 space-y-3" onsubmit={(event) => { event.preventDefault(); void save(); }}>
   <div class="grid md:grid-cols-2 gap-3">
     <label class="field">
       <span>Russian headword</span>
@@ -67,5 +71,5 @@
     </label>
   </div>
   <button class="btn btn-primary" disabled={saving}>Save details</button>
-  <button class="btn ml-2" type="button" disabled={saving} on:click={onCancel}>Cancel</button>
+  <button class="btn ml-2" type="button" disabled={saving} onclick={onCancel}>Cancel</button>
 </form>

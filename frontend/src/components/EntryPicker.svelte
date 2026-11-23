@@ -4,13 +4,17 @@
   import { errorMessage, isAbortError } from '../lib/errors';
   import type { EntryReference, Page, Summary } from '../lib/types';
 
-  export let selected: EntryReference | null = null;
-  export let onSelect: (item: EntryReference | null) => void;
+  interface Props {
+    selected?: EntryReference | null;
+    onSelect: (item: EntryReference | null) => void;
+  }
 
-  let query = '';
-  let options: Summary[] = [];
-  let busy = false;
-  let error = '';
+  let { selected = null, onSelect }: Props = $props();
+
+  let query = $state('');
+  let options = $state<Summary[]>([]);
+  let busy = $state(false);
+  let error = $state('');
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let activeRequest: AbortController | undefined;
@@ -72,7 +76,7 @@
   <div class="flex items-center gap-2">
     <strong class="russian">{selected.lemma}</strong>
     <span class="badge badge-sm">{selected.pos}</span>
-    <button type="button" class="btn btn-xs btn-ghost" on:click={() => choose(null)}>
+    <button type="button" class="btn btn-xs btn-ghost" onclick={() => choose(null)}>
       Change ×
     </button>
   </div>
@@ -82,7 +86,7 @@
     placeholder="Find another Russian entry…"
     aria-label="Search for a related entry"
     bind:value={query}
-    on:input={scheduleSearch}
+    oninput={scheduleSearch}
   />
   {#if busy}<span class="loading loading-spinner loading-xs" aria-label="Searching"></span>{/if}
   {#if error}<p class="text-error text-sm" role="alert">{error}</p>{/if}
@@ -91,7 +95,7 @@
       <button
         type="button"
         class="block p-2 w-full text-left hover:bg-base-200"
-        on:click={() => choose(result)}
+        onclick={() => choose(result)}
       >
         <span class="russian font-semibold">{result.lemma}</span>
         <small>{result.pos} · {result.gloss_preview}</small>
