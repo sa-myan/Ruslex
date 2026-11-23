@@ -59,6 +59,14 @@ workspaces. A container rebuild does not touch those data directories.
 **Why `/srv`?** It is a good convention for service data, not a requirement of
 Docker. What matters is separation of application source from persistent data.
 
+**`PUID` and `PGID`** in `.env` are the numeric Linux user ID and group ID
+under which the processing worker runs (see `id -u` and `id -g`). They are
+filesystem identities, not Django accounts or passwords. `./process.sh`
+prepares the private OpenCode state directory on first use, using a short-lived
+network-disabled setup container; ordinary processing continues as the
+unprivileged user. Use `./process.sh doctor` and `./process.sh repair-state`
+if ownership ever needs checking or correction. See [DEPLOYMENT.md](DEPLOYMENT.md).
+
 The Docker bind mount `${DATA_ROOT}:/data` exposes the same existing host DBs to
 the website without copying DBs into the image. `DATA_ROOT` in `.env` determines
 where the host directories live; `DATA_DIR=/data` is the *container* path.

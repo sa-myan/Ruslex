@@ -54,7 +54,9 @@ def initialize(*, root: Path, source: Path | None, hostname: str, dry_run: bool)
     for folder in (root, root / "lexicon", root / "admin", root / "backups",
                    root / "processing", root / "processing" / "state", root / "ocr", root / "releases"):
         folder.mkdir(parents=True, exist_ok=True)
-        folder.chmod(0o750)
+        # OpenCode credentials belong to the non-root processing worker.
+        # `process.sh` performs the bind-mount owner fix before first use.
+        folder.chmod(0o700 if folder == root / "processing" / "state" else 0o750)
     if not lexicon.exists():
         with closing(sqlite3.connect(f"file:{source.resolve()}?mode=ro", uri=True)) as original:
             with closing(sqlite3.connect(lexicon)) as destination:

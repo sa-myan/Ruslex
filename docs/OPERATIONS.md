@@ -75,7 +75,8 @@ restore only after confirming acceptable data loss.
 ## Book/AI processing commands
 
 ```bash
-./process.sh build
+./process.sh build        # also prepares persistent OpenCode state permissions
+./process.sh doctor       # verifies OpenCode can write its log/config folders
 ./process.sh version
 ./process.sh inventory
 ./process.sh audit        # Markdown + CSV review queues (read only)
@@ -97,7 +98,8 @@ VPS. See [BOOK_PROCESSING.md](BOOK_PROCESSING.md) for the complete workflow.
 | Database locked | Active writer, pending SQLite transaction | Retry later, avoid simultaneous bulk promotion |
 | OCR import detects changed page | Source differs from imported text | Correct source/edition; never overwrite silently |
 | Promotion says live changed | A web user edited dictionary since workspace began | New workspace from fresh live snapshot |
-| OpenCode fails | `./process.sh version`, `./process.sh auth`, model ID | Login/provider/CLI compatibility; do one batch |
+| OpenCode `EACCES` under `/state` | `./process.sh doctor` | `./process.sh repair-state`, then retry `version` |
+| OpenCode login/model fails | `./process.sh version`, `./process.sh auth`, model ID | Provider/CLI compatibility; test one small batch |
 | Restore refuses `-wal` or `-shm` | SQLite sidecar left after stop | Diagnose journal state before manual intervention |
 
 ## Maintenance schedule

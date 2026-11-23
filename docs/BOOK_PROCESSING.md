@@ -16,6 +16,7 @@ public CLI.
 cd /srv/apps/ruslex
 ./manage.sh init         # idempotent; creates /srv/data/ruslex/ocr and processing
 ./process.sh build       # Python morphology + OpenCode in separate image
+./process.sh doctor      # verify private state directory permissions
 ./process.sh version     # verify OpenCode installation
 ./process.sh auth        # log in inside its persistent private /state directory
 ./process.sh inventory   # read-only live dictionary overview

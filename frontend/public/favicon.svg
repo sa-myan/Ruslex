@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 500 520" role="img" aria-labelledby="title desc">
+<title id="title">Russian Lexicon — Я, indexed pages and an open book</title>
+<desc id="desc">Ivory Cyrillic Ya in front of two pale index pages, rising from a curved ivory and coral-red open book on a midnight-blue rounded square.</desc>
+<defs>
+<linearGradient id="navy" x1="0" y1="0" x2=".75" y2="1"><stop offset="0" stop-color="#24537C"/><stop offset=".45" stop-color="#153757"/><stop offset="1" stop-color="#0C2643"/></linearGradient>
+<linearGradient id="paper" x1="0" y1="0" x2="1" y2=".8"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#F8F5F0"/></linearGradient>
+<linearGradient id="backPage" x1="0" y1="0" x2="1" y2=".8"><stop stop-color="#F0F7FF"/><stop offset="1" stop-color="#9BBCEC"/></linearGradient>
+<linearGradient id="red" x1="0" y1="0" x2="1" y2=".3"><stop stop-color="#FE4B48"/><stop offset=".5" stop-color="#EB2D33"/><stop offset="1" stop-color="#F34244"/></linearGradient>
+</defs>
+<!-- Contrasting navy tile -->
+<rect x="11.5" y="18.5" width="477" height="498" rx="127" fill="url(#navy)"/>
+<rect x="12.35" y="19.35" width="475.3" height="496.3" rx="126.2" fill="none" stroke="#8CBDEA" stroke-opacity=".85" stroke-width="10"/>
+<!-- Upper page 1 -->
+<path d="M248 110 C263 93 273 88 299 85 L382 77 C416 72 432 88 432 121 L432 228 C431 246 422 263 408 276 L408 158 C408 123 398 110 373 107 Z" fill="url(#backPage)"/>
+<!-- Upper page 2 -->
+<path d="M177 156 C195 133 208 128 231 125 L350 112 C384 108 397 121 397 153 L397 292 C397 308 387 320 375 332 L375 187 C375 157 368 146 347 146 L219 147 C201 147 190 151 177 156 Z" fill="url(#paper)"/>
+<!-- Ya -->
+<path fill="url(#paper)" fill-rule="evenodd" d="M207 162 L347 162 L347 365 C323 375 301 388 281 402 L281 303 L255 303 L200 380 L132 359 L186 294 C151 284 132 260 133 231 C133 190 163 163 207 162 Z M281 201 L252 201 C218 201 203 212 203 233 C203 254 220 266 252 266 L281 266 Z"/>
+<!-- Coral book underline -->
+<path d="M78 431 C132 417 198 432 255 467 C311 433 372 418 431 431 L412 461 C353 450 304 456 255 485 C209 455 156 447 97 460 Z" fill="url(#red)"/>
+<!-- Open book -->
+<path d="M52 414 L65 373 C98 362 131 367 165 380 C206 396 234 422 255 454 C202 418 158 407 114 407 C92 407 70 409 52 414 Z" fill="url(#paper)"/>
+<path d="M255 454 C279 423 306 400 346 384 C378 369 414 362 443 372 L456 414 C430 408 411 406 392 408 C341 412 294 428 255 454 Z" fill="url(#paper)"/>
+</svg>

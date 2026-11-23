@@ -26,6 +26,7 @@ cd /srv/apps/ruslex
 ./manage.sh backup
 ./manage.sh deploy      # controlled website release; Caddy untouched
 ./process.sh help       # OCR/AI staging and promotion, no always-on worker
+./process.sh doctor     # check processing state directory permissions
 ```
 
 Public route: `https://ruslex.2-29-159-213.sslip.io` (when published and DNS

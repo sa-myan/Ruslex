@@ -35,3 +35,31 @@ services:
       - "${DATA_ROOT}/ocr:/ocr:ro"
       - "${DATA_ROOT}/lexicon:/live"
       - "${DATA_ROOT}/backups:/backups"
+
+  state-init:
+    # Run only when OpenCode state needs initialization or repair.
+    # Root can repair the processing directory and private OpenCode state only.
+    image: ruslex-processing:local
+    build:
+      context: .
+      dockerfile: Dockerfile.processing
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - "${DATA_ROOT}/processing:/processing"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        set -eu
+        umask 077
+        mkdir -p /processing/state/config /processing/state/data /processing/state/cache
+        chown "${PUID}:${PGID}" /processing
+        chmod 750 /processing
+        chown -R "${PUID}:${PGID}" /processing/state
+        chmod 700 /processing/state /processing/state/config /processing/state/data /processing/state/cache
+        touch /processing/state/.ruslex-ready-${PUID}
+        chown "${PUID}:${PGID}" /processing/state/.ruslex-ready-${PUID}

@@ -121,3 +121,38 @@ df -h
 free -h
 ./manage.sh status
 ```
+
+## OpenCode state permissions (first build and repair)
+
+The processing worker is not root: its Linux UID/GID come from `PUID` and
+`PGID` in `.env`. OpenCode stores credentials, logs and cache under
+`/state` inside that container, backed by
+`$DATA_ROOT/processing/state` on the VPS. Docker may create a missing host
+bind-mount directory as root, which prevents the worker from writing logs.
+
+`./process.sh build` prepares this directory once. The first `./process.sh`
+command also prepares it if it hasn't been initialized. Its setup operation
+runs a **short-lived**, **network-disabled** container with access only to the
+processing directory; it changes the **parent directory's ownership** and the
+**private state subtree's ownership** to the worker UID/GID. Other processing
+workspaces are not recursively modified. It does **not** change Caddy, the live
+dictionary, or the website.
+
+```bash
+./process.sh doctor          # check the worker can create OpenCode folders
+./process.sh version         # verify the OpenCode CLI runs
+./process.sh repair-state    # explicit repair if permissions regress
+./process.sh doctor
+```
+
+The repair command is safe to rerun, but it changes ownership of the
+**processing parent directory itself** and recursively of the **private state
+subdirectory**. Keep that directory dedicated to Ruslex
+and do not store unrelated files in it. Do not use `chmod 777` or run the
+AI worker as root. If `.env` uses a different UID/GID, `repair-state` adopts
+that configuration; inspect it first if unexpected.
+
+The site favicon is stored in `frontend/public/`. Vite copies those static
+assets into Django's static build. Browser links use `/static/favicon.svg`
+with ICO and PNG fallbacks. A web `./manage.sh deploy` is necessary after
+changing the favicon; processing images need not be rebuilt.
