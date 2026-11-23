@@ -9,6 +9,15 @@ local development, repeat deployments, maintenance, backups, recovery, and
 adding services later. The companion bundle contains complete app examples,
 Caddy templates, backup helpers, and a blank server inventory.
 
+## Ruslex implementation note (November 2026)
+
+This is the **server-wide reference** and applies to all Docker/Caddy projects.
+For Ruslex-specific VPS-only install, deployment, processing, data promotion and
+recovery commands use [VPS_FOUNDATIONS.md](VPS_FOUNDATIONS.md),
+[DEPLOYMENT.md](DEPLOYMENT.md), [BOOK_PROCESSING.md](BOOK_PROCESSING.md) and
+[OPERATIONS.md](OPERATIONS.md). Local-device workflows below are optional;
+all Ruslex development, builds and AI batches can be run from the VPS.
+
 ## 1. Choose the right procedure
 
 | Situation | Follow |

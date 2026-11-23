@@ -1,38 +1,89 @@
-# Architecture
+# Ruslex architecture and ownership boundaries
 
-## Request flow
+The project has **two independently started Compose projects**, sharing only
+the persistent dictionary and OCR/workspace directories:
 
-`Browser (Svelte 5 SPA)` → `Caddy HTTPS` → `Gunicorn` → `Django native HTTP endpoints` → `SQLite lexicon or admin`.
+```
+Internet HTTPS -> one shared Caddy -> proxy network -> ruslex-web:8000
+                                                   |
+                                    Django + compiled Svelte (one image)
+                                                   |
+                    /srv/data/ruslex/lexicon/lexicon.db
+                    /srv/data/ruslex/admin/admin.sqlite3
 
-There is only **one runtime service**: `web`. The frontend is built by Vite at image-build time, placed into Django's static directory and served by WhiteNoise; Node is not required in production.
+On-demand, no Caddy route:
+  ruslex-processing worker (network, /live read-only)
+    -> OCR import / AI review / validated enrichment -> /work/candidate.db
+    -> inspect / plan
+  ruslex-processing promoter (NO network, /live read-write)
+    -> live baseline comparison -> SQLite backup -> append-only transaction
+```
 
-## Backend code boundaries
+## Backend code
 
-- `siteconf/` — environment-backed configuration, Caddy-aware HTTPS settings and database routing.
-- `accounts/` — Django users, groups, session authentication, permission checks, registration control, admin interface. No custom authentication database code.
-- `dictionary/models.py` — explicit mappings of the existing v3 dictionary tables; `managed=False`.
-- `dictionary/queries.py` — stable read-only interface, reference browsing, tags, statistics and review queue.
-- `dictionary/query_search.py`, `query_detail.py`, `query_helpers.py` — search and ranking, entry serialization, and parameterized SQL for legacy tables without integer IDs.
-- `dictionary/validation.py` — pure, testable input rules; no Django or database access.
-- `dictionary/services.py` — validated mutations with `transaction.atomic(using='lexicon')` for each operation.
-- `dictionary/api.py` — HTTP verbs, request parsing, authorization and responses; no SQL hidden in views.
-- `docs/BACKEND.md` — detailed conventions, debugging and regression testing for changes.
-- `processing/` — offline enrichment and auditing, outside the web request process.
+- `backend/siteconf/`: Django settings, URLs, SQLite routing and WSGI.
+- `backend/accounts/`: Django-auth groups, sessions and admin.
+- `backend/dictionary/api.py`: request parsing, permissions, JSON responses.
+- `backend/dictionary/validation.py`: request validators independent of Django.
+- `backend/dictionary/services.py`: transactional editing operations.
+- `backend/dictionary/queries.py`: stable read-only interface.
+- `query_search.py`, `query_detail.py`, `query_helpers.py`, `search_rank.py`:
+  search, entry serialization, SQL and relevance.
 
-Django's Group permissions are the authoritative authorization source. Anonymous browsing excludes hidden words; a user needs the Reviewer permission to see hidden words or enter Review Mode. Editors can mutate dictionary content but permission checks happen server-side.
+Dictionary models are unmanaged (`managed=False`); Django migrations are
+routed only to the separate **admin** SQLite database. Existing lexeme IDs,
+sense-scoped relationships, review decisions and user notes must be preserved.
 
-## Frontend code boundaries
+## Frontend code
 
-`App.svelte` owns the layout/navigation. `pages/` owns the screens; `components/` owns repeating sense and record editors. `lib/api.ts` is the only file that manages API requests, CSRF headers and session state. `lib/types.ts` contains wire types. Svelte 5 is used without the server-side rendering layer of SvelteKit.
+- `App.svelte`: application shell/page routing.
+- `pages/`: one screen per file.
+- `components/`: reusable entry, sense, tag, relation and navigation editors.
+- `lib/http.ts`, `session.ts`, `navigation.ts`, `errors.ts`, `types.ts`: common
+  transport, identity, navigation, errors, wire contracts.
+- Svelte 5 runes for local component state; stores remain for global shared
+  state, which is still supported by Svelte.
 
-## Data consistency
+Vite runs at **image build time**, producing files that Django/WhiteNoise
+serves. There is **no frontend Node service** on the live VPS.
 
-The dictionary is intentionally separate from Django's administrative database. There are no cross-file foreign keys. The dictionary tables still use their native foreign keys, and no Django schema migrations target the dictionary connection. Each write occurs in a transaction on the lexicon database. The importer backs up through SQLite's backup API, not an unsafe raw copy of an active database.
+## Operational code
 
-The source code never needs to know where previous v4 was installed. The new project lives at `/srv/apps/ruslex`, binds only localhost port `8790`, and uses the distinct `ruslex` Compose project and hostname. No script deletes, patches or reuses a previous v4 checkout.
+- `Dockerfile`, `docker-compose.yml`: web image and only always-on service.
+- `Dockerfile.processing`, `docker-compose.processing.yml`: on-demand isolated
+  CPU/network-bound processing; promoter has no network.
+- `manage.sh`, `scripts/install.py`, `release.py`, `proxy.py`, `backup.py`,
+  `restore.py`: installation, release, shared-proxy publication and recovery.
+- `process.sh`, `processing/cli.py`: corpus and AI command-line interface.
+- `processing/ocr.py`: Mistral OCR input/page parsing, tokenization, morphology.
+- `processing/forms.py`: form classification and manual decisions.
+- `processing/storage.py`, `provider.py`, `prompts.py`, `validation.py`,
+  `workflow.py`, `enrichment_merge.py`: vetted incremental enrichment.
+- `processing/promotion.py`: sole planned entry point for inserting offline
+  processing data into the live lexicon.
+- `processing/audit.py`: independent read-only dictionary audit, exposed through `./process.sh audit`.
+- The old unused `Pipeline Operator` group is no longer created during role initialization; any existing group remains intact for manual review.
 
-## Tradeoffs
+## Data lifecycle invariants
 
-- SQLite is appropriate at the current size; many simultaneous writers may eventually justify PostgreSQL. Avoid overengineering until observed requirements demand it.
-- Python relevance scoring matches recorded v3 examples and is maintainable for ~1,700 entries; if the lexicon grows much larger, consider indexed search.
-- Some v3 features are tied to specialized review/enrichment scripts; the new offline pipeline deliberately remains independent of the Django web server.
+1. Git changes code. Docker images run code. SQLite backups protect data.
+2. The live lexicon is never part of the image or Git repository.
+3. The website does not call an LLM or depend on OpenCode being running.
+4. Processing must be reproducible from original OCR + a baseline snapshot.
+5. AI proposals are not authoritative: new data is validated and staged.
+6. Promotion is append-only, uses a fresh live-state comparison and backups,
+   and performs writes inside a single SQLite transaction.
+7. Human-maintained existing senses and review state are not overwritten.
+8. No script modifies Caddy except the explicit `publish`/`unpublish` commands.
+9. There is one shared `proxy` Docker network; removing Ruslex must not delete
+   it or stop unrelated containers.
+
+## Why this architecture (instead of more services)?
+
+The current small SQLite dictionary and occasional OCR/AI batches don't need
+PostgreSQL, Redis, Celery, Kubernetes or a permanent inference server. A
+single web container and temporary processing containers are a deliberately
+small operational footprint for a 2 GB VPS.
+
+Read [VPS_FOUNDATIONS.md](VPS_FOUNDATIONS.md), [DEPLOYMENT.md](DEPLOYMENT.md),
+[BOOK_PROCESSING.md](BOOK_PROCESSING.md), and [OPERATIONS.md](OPERATIONS.md).

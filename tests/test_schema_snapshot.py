@@ -7,6 +7,7 @@ import unittest
 DATABASE = Path(__file__).resolve().parents[1] / "data" / "lexicon.db"
 
 
+@unittest.skipUnless(DATABASE.is_file(), "Optional historical fixture not available")
 class SuppliedSnapshotTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

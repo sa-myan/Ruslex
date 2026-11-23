@@ -38,8 +38,8 @@ def validate_senses(senses):
             raise ValueError("Invalid patterns list")
         for pattern in patterns:
             require_string(pattern, "pattern", 160)
-            if not RUSSIAN.search(pattern) or not CASE_END.search(pattern):
-                raise ValueError("Pattern must use Cyrillic and end in a standard case: " + pattern)
+            if not RUSSIAN.search(pattern):
+                raise ValueError("Pattern must contain Cyrillic text: " + pattern)
         examples = sense.get("examples")
         if not isinstance(examples, list) or not 1 <= len(examples) <= 5:
             raise ValueError("Each sense needs 1–5 examples")

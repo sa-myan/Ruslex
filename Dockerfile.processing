@@ -1,0 +1,21 @@
+# On-demand AI/corpus tools only. Never used by the public website.
+FROM node:22-bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PATH=/opt/venv/bin:$PATH \
+    HOME=/state \
+    XDG_CONFIG_HOME=/state/config \
+    XDG_DATA_HOME=/state/data \
+    XDG_CACHE_HOME=/state/cache
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-venv ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/venv
+COPY processing/requirements.txt /tmp/processing-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/processing-requirements.txt
+# OpenCode is only invoked for deliberate AI commands, never at web startup.
+RUN npm install --global --no-audit --no-fund @opencode/cli@2.4.0
+WORKDIR /app
+COPY processing/ /app/processing/
+CMD ["python", "-m", "processing.cli", "--help"]

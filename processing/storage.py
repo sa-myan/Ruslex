@@ -4,7 +4,7 @@ import json
 import re
 import sqlite3
 import tempfile
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from .taxonomy import seed_tags, TAXONOMY_VERSION
 from .validation import normalized
@@ -38,7 +38,7 @@ def write_database(path: Path):
 
 def snapshot(src: Path, dest: Path):
     with read_database(src) as original:
-        with sqlite3.connect(dest) as copy:
+        with closing(sqlite3.connect(dest)) as copy:
             original.backup(copy)
             if copy.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise RuntimeError("SQLite backup integrity check failed")
@@ -71,14 +71,43 @@ def sources_for_lexeme(db, lexeme_id: int):
     return selected
 
 
-def inputs(db, stage: str):
+def inputs(db, stage: str, *, book: str | None = None):
+    """Return only un-enriched kept words, or attested pages, optionally per book.
+
+    The book filter prevents a second book from rerunning thousands of already
+    enriched entries. Existing manually maintained senses remain authoritative.
+    """
+    if book and db.execute(
+        "SELECT COUNT(*) FROM books WHERE title=?", (book,)
+    ).fetchone()[0] > 1:
+        raise ValueError(
+            f"Book title {book!r} matches multiple editions. "
+            "Use a distinct title per imported edition until edition-scoped selection is supported."
+        )
     if stage == "lexemes":
-        for row in db.execute("""SELECT id,lemma,pos FROM lexemes
-                WHERE entry_type='word' AND human_status='kept' ORDER BY id"""):
+        sql = """SELECT l.id,l.lemma,l.pos FROM lexemes l
+            WHERE l.entry_type='word' AND l.human_status='kept'
+            AND NOT EXISTS (SELECT 1 FROM senses s WHERE s.lexeme_id=l.id)
+        """
+        values = []
+        if book:
+            sql += """AND EXISTS (SELECT 1 FROM lexeme_pages lp
+                JOIN pages p ON p.id=lp.page_id
+                JOIN books b ON b.id=p.book_id
+                WHERE lp.lexeme_id=l.id AND b.title=?) """
+            values.append(book)
+        sql += " ORDER BY l.id"
+        for row in db.execute(sql, values):
             yield {"id": row["id"], "lemma": row["lemma"], "pos": row["pos"],
                    "contexts": sources_for_lexeme(db, row["id"])}
     else:
-        for row in db.execute("SELECT id,markdown FROM pages ORDER BY id"):
+        sql = "SELECT p.id,p.markdown FROM pages p"
+        values = []
+        if book:
+            sql += " JOIN books b ON b.id=p.book_id WHERE b.title=?"
+            values.append(book)
+        sql += " ORDER BY p.id"
+        for row in db.execute(sql, values):
             yield {"id": row["id"], "markdown": row["markdown"]}
 
 

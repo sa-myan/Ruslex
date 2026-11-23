@@ -6,14 +6,13 @@ from accounts.models import SiteOptions
 
 
 class Command(BaseCommand):
-    help = "Create default reviewer, editor, and pipeline-operator groups"
+    help = "Create default reviewer and editor groups"
 
     def handle(self, *args, **options):
         content_type = ContentType.objects.get_for_model(SiteOptions)
         mapping = {
             "Reviewer": ["review_lexicon"],
             "Editor": ["review_lexicon", "edit_lexicon"],
-            "Pipeline Operator": ["run_pipeline"],
         }
         for name, codenames in mapping.items():
             group, _ = Group.objects.get_or_create(name=name)

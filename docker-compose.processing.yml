@@ -1,0 +1,37 @@
+# A completely separate, on-demand Compose project: no published ports,
+# no proxy network, no always-running workers.
+name: ruslex-processing
+x-processing: &processing
+  image: ruslex-processing:local
+  build:
+    context: .
+    dockerfile: Dockerfile.processing
+  user: "${PUID}:${PGID}"
+  working_dir: /app
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:rw,nosuid,size=128m
+  volumes:
+    - "${DATA_ROOT}/processing:/work"
+    - "${DATA_ROOT}/ocr:/ocr:ro"
+    - "${DATA_ROOT}/processing/state:/state"
+services:
+  worker:
+    <<: *processing
+    volumes:
+      - "${DATA_ROOT}/processing:/work"
+      - "${DATA_ROOT}/ocr:/ocr:ro"
+      - "${DATA_ROOT}/lexicon:/live:ro"
+      - "${DATA_ROOT}/backups:/backups:ro"
+      - "${DATA_ROOT}/processing/state:/state"
+  promoter:
+    <<: *processing
+    # No network or model credentials during the only operation writing live.
+    network_mode: none
+    volumes:
+      - "${DATA_ROOT}/processing:/work"
+      - "${DATA_ROOT}/ocr:/ocr:ro"
+      - "${DATA_ROOT}/lexicon:/live"
+      - "${DATA_ROOT}/backups:/backups"

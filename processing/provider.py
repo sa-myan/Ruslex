@@ -4,6 +4,7 @@ import re
 import os
 import subprocess
 import tempfile
+from pathlib import Path
 from .prompts import BASE_PROMPT
 
 def model_response(stdout: str):
@@ -32,21 +33,20 @@ def opencode(prompt: str, model: str, executable: str, timeout: int):
     # A temporary, tool-denied agent cannot modify or read arbitrary files.
     denied = [{"action": "*", "resource": "*", "effect": "deny"}]
     cfg = {"$schema": "https://opencode.ai/config.json", "permissions": denied,
+           "policies": [{"action": "tool.use", "resource": "*", "effect": "deny"}],
            "agents": {"lexicon-enricher": {"mode": "primary", "steps": 1,
                        "permissions": denied}}}
     with tempfile.TemporaryDirectory(prefix="lexicon-enrichment-") as temp:
         work = Path(temp)
         (work / "opencode.json").write_text(json.dumps(cfg), encoding="utf-8")
-        import os
         env = dict(os.environ)
-        env.pop("OPENAI_API_KEY", None)
         env.pop("OPENCODE_CONFIG", None)
         env.pop("OPENCODE_CONFIG_CONTENT", None)
         # OpenCode may use PWD for project discovery. subprocess.run(cwd=...)
         # changes the process cwd but does not update an inherited PWD.
         # Without this, our temporary agent config may not be loaded.
         env["PWD"] = str(work)
-        command = [executable, "run", "--standalone", "--archived", "--format", "json",
+        command = [executable, "--standalone", "run", "--format", "json",
                    "--agent", "lexicon-enricher", "--model", model, prompt]
         try:
             result = subprocess.run(command, cwd=work, env=env, text=True,

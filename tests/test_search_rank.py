@@ -1,6 +1,7 @@
 """Pure-Python relevance regression against v3's verified SQLite output."""
 import json
 import sqlite3
+from contextlib import closing
 from types import SimpleNamespace
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ class SearchParityTests(unittest.TestCase):
         for text in ('already', 'bread', 'spread'):
             self.assertEqual(english_quality(text,'read'),0)
 
+    @unittest.skipUnless((ROOT / "data/lexicon.db").is_file(), "Optional historical fixture not available")
     def test_v3_reference_order(self):
         data=json.loads((ROOT/'tests/v3_search_fixtures.json').read_text())
         db=sqlite3.connect(ROOT/'data/lexicon.db')

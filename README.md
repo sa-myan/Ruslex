@@ -1,64 +1,52 @@
-# Ruslex — Russian Lexicon
+# Ruslex — Russian lexicon
 
-A **new, standalone application** rebuilt from the supplied v3 source and SQLite dictionary. Written with Django 5.2, Svelte 5, Tailwind 4, daisyUI 5, and Docker Compose. **No dependency on any previous v4 installation.**
+A personal Russian dictionary with Django 5.2, Svelte 5, SQLite and Docker
+Compose. The app is standalone and reuses your existing shared Caddy proxy;
+new textbooks are processed by **separate on-demand VPS commands**, never
+inside a web request.
 
-## First installation on the VPS
+## Start here
 
-The default path is `/srv/apps/ruslex`; persistent data is at `/srv/data/ruslex`.
+| You want to… | Read |
+| --- | --- |
+| Understand the VPS, Docker, Caddy and where files live | [VPS foundations](docs/VPS_FOUNDATIONS.md) |
+| Install, build, deploy or roll back the website | [Deployment](docs/DEPLOYMENT.md) |
+| Import Mistral OCR, classify words, enrich, promote data | [Book processing](docs/BOOK_PROCESSING.md) |
+| Back up, restore, disable, troubleshoot | [Operations](docs/OPERATIONS.md) |
+| Understand code and data ownership | [Architecture](docs/ARCHITECTURE.md) |
+| Run verification and tests | [Tests](docs/TESTS.md) |
+| Understand general Ubuntu/Docker hosting beyond Ruslex | [Reusable VPS guide](docs/VPS_WORKFLOW.md) |
+
+## Everyday VPS commands
 
 ```bash
-# Extract the archive so /srv/apps/ruslex/README.md exists.
 cd /srv/apps/ruslex
-./deploy.sh --dry-run   # inspect the plan
-./deploy.sh             # install and start
-./manage.sh admin       # create your first Django administrator
-./manage.sh test        # regression tests on disposable database copies
-```
-
-The new public hostname is **https://ruslex.2-29-159-213.sslip.io**. The local preview address is `http://127.0.0.1:8790`. The installer adds a new, independent Caddy site **only if the documented `/srv/proxy/config/sites` layout is detected**. Otherwise it prints the required Caddy block and leaves the proxy alone.
-
-Existing v3 and former v4 services, checkouts, hostnames, and databases are never touched by this installer. You can remove old v4 separately at your discretion.
-
-## Database separation
-
-| Data | Host path | Django alias |
-|---|---|---|
-| Lexemes, senses, tags, examples, pages, occurrences, review state and relations | `/srv/data/ruslex/lexicon/lexicon.db` | `lexicon` |
-| User accounts, passwords, groups, permissions, sessions, migrations, site settings | `/srv/data/ruslex/admin/admin.sqlite3` | `default` |
-
-The first installation copies `data/lexicon.db` using SQLite's backup API. Subsequent installations **never overwrite the installed lexicon database**. Dictionary models explicitly have `managed=False`; Django migrations are routed exclusively to the administrative database. The original linguistic IDs and all sense-specific relationships remain intact.
-
-## Common commands
-
-```bash
 ./manage.sh status
 ./manage.sh logs
-./manage.sh check
 ./manage.sh backup
-./manage.sh test
-./manage.sh update
-./manage.sh admin
-./manage.sh stop
-./manage.sh start
+./manage.sh deploy      # controlled website release; Caddy untouched
+./process.sh help       # OCR/AI staging and promotion, no always-on worker
 ```
 
-All authenticated users start with no editor or reviewer rights. In Django Admin, open **Users** to assign one or more permission groups. Under **Site options**, enable or disable public signup (disabled by default). The three groups are **Reviewer**, **Editor**, and **Pipeline Operator**. They use backend permissions, not just hidden frontend controls.
+Public route: `https://ruslex.2-29-159-213.sslip.io` (when published and DNS
+resolves). Local-only diagnosis: `http://127.0.0.1:8790` from the VPS.
 
-## Technology and structure
+## Ownership model
 
-- `backend/siteconf/`: Django settings, URLs, WSGI, database router.
-- `backend/accounts/`: native Django sessions, registration switch, groups and user administration.
-- `backend/dictionary/`: existing SQLite models, queries, input validation, editing services and HTTP endpoints.
-- `frontend/src/pages/`: Svelte pages for search, entry editing, references, review, new words, login and statistics.
-- `frontend/src/components/`: reusable sense, relation, record and word-picker components.
-- `processing/`: independent offline enrichment and audit modules sourced from the provided v3 workflow.
-- `scripts/`: first-install, backups, preflight and disposable database smoke tests.
-- `docs/`: VPS operations reference, architecture, schema, migration, AI pipeline and limitations.
+- `/srv/apps/ruslex`: source code and deployment definitions, tracked in Git.
+- `/srv/data/ruslex/lexicon/lexicon.db`: live dictionary, **never in Git**.
+- `/srv/data/ruslex/admin/admin.sqlite3`: Django authentication, **never in Git**.
+- `/srv/data/ruslex/ocr`: original OCR sources, **never in Git**.
+- `/srv/data/ruslex/processing`: private workspaces and AI credentials.
+- `/srv/proxy`: **shared** Caddy and certificates, independent of Ruslex.
 
-Django serves API and built Svelte assets via Gunicorn and WhiteNoise. Caddy handles HTTPS and proxies to `ruslex-web:8000` on the existing `proxy` Docker network. **No Node server, Redis, PostgreSQL, or Celery daemon runs in production.**
+The website has one always-on container. Svelte assets are compiled during
+image build; Node is not a live web service. The AI processing image is built
+separately, runs only on demand, has no public port, and its promotion service
+has no network. Live dictionary promotion is append-only and refuses to
+replace existing manual edits.
 
-## IMPORTANT — verification status
-
-The supplied dictionary passed SQLite integrity and foreign-key checks. The Python code compiled, the original search logic passed 18 recorded v3 query comparisons, and the offline processing snapshot/inventory/dry-run/audit paths executed successfully. The Svelte/TypeScript syntax was parsed and checked with the available compiler. **This environment does not have Django, Svelte's npm dependencies or Docker installed**, so the actual `npm run check`, Django integration tests, full image build and browser interactions **still must be run on your VPS**. The deployment builds/validates the image and verifies the health endpoint, and `./manage.sh test` performs disposable database API checks. Do **not** declare production parity until the remaining tests and manual workflow review pass.
-
-Start with [docs/INSTALL.md](docs/INSTALL.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**Verification:** Python safety checks run without Docker. A complete Svelte
+build, Django integration run, Docker processing image build and a real model
+batch must still be verified on the VPS before treating a release or new-book
+import as operationally validated.

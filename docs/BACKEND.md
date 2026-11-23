@@ -82,8 +82,10 @@ From the repository root, with Python 3.10+:
 PYTHONPATH=backend python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-The search-parity and snapshot tests require the original bundled
-`data/lexicon.db` file. The **validation-only** test works without it:
+Search-parity and historical snapshot checks require the optional local
+`data/lexicon.db` fixture (not committed to Git). On the VPS, avoid copying
+the live lexicon into your checkout casually. The **validation-only** test
+works without that fixture:
 
 ```bash
 PYTHONPATH=backend python3 -m unittest discover -s tests -p 'test_backend_validation.py' -v

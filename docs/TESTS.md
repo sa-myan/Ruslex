@@ -1,36 +1,39 @@
-# Verification and limitations
+# Validation and test strategy
 
-## Offline checks performed before packaging
-
-- Python module compilation succeeded.
-- 18/18 recorded v3 search relevance/count/top-result fixture comparisons passed using the bundled database.
-- SQLite integrity and foreign-key checks passed; lexeme, sense and relationship counts confirmed.
-- Offline processing `inventory`, `prepare`, `report` and `run --dry-run` succeeded.
-- Svelte TypeScript script sections and standalone TypeScript files passed syntax parsing with TypeScript 5.8.
-- Dockerfile, Compose YAML and shell scripts passed structural/syntax inspection (but not actual Docker startup).
-
-## Must be executed on the VPS
+## Lightweight checks on the VPS
 
 ```bash
 cd /srv/apps/ruslex
-./deploy.sh --dry-run
-./deploy.sh
-./manage.sh check
-./manage.sh test
+python3 scripts/offline_checks.py
+./manage.sh build    # runs Svelte type check and Vite compilation
+./manage.sh test     # Django smoke tests on disposable database copies
+./manage.sh health
 ```
 
-`./manage.sh test` creates **temporary copies** of the lexicon and a fresh admin database to verify schema routing, blocked anonymous edits, disabled signup by default, hidden entry visibility, v3 query fixture parity, reviewer/editor boundaries, and registration permission defaults. It does not write to the mounted production databases.
+`python3 scripts/offline_checks.py` uses only Python stdlib, including the
+new OCR/append-only-promotion safety tests, so it can run before building the
+processing image. The processing container contains `pymorphy3` for real OCR
+imports, not required by the fake-analyzer safety tests.
 
-## Browser acceptance checklist
+`./manage.sh test` uses a separate admin DB and a copy of the live lexicon.
+It must not write to the production DB. Browser checks still needed: search,
+sense editing, public notes, tags, relations, hidden words, save messages,
+login, and portrait navigation.
 
-- Sign in and out; verify CSRF handling, Django Admin and first superuser creation.
-- Search Russian and English words, check meaning ranking and multiple-page filtering.
-- Toggle Review Mode and confirm hidden entries **never appear** when it is off.
-- Edit a headword, create/edit/archive senses, add/edit examples and patterns.
-- Create/edit sense-specific relationships from both directions; verify they appear under the correct sense.
-- Assign/remove tags, add external links and expression constituents, browse textbook reference pages.
-- Create a reviewer and editor through Django Admin and verify role restrictions.
-- Confirm registration can be enabled and disabled by Django Admin; freshly registered users cannot edit.
-- Verify backups and a restart leave both database files unchanged.
+## Highest-risk workflow validation
 
-**Do not call this a fully verified production release until the entire checklist passes.** The build-time verification catches Python import and frontend compilation errors before the new container is run, but cannot replace manual browser regression testing.
+Before processing a **real second book**, use a small 1–3 page OCR export to
+verify: `inspect-ocr`, `workspace`, `import-ocr`, `resolve --dry-run`,
+`resolve --max-batches 1`, `review-forms`, `plan`, and checked DB promotion.
+Actual model output shape and provider authentication could not be validated
+in the offline authoring environment; this requires a **VPS trial**.
+
+Also test a stale workspace after editing an entry on the website: `plan`
+should refuse promotion. The offline unit tests cover this case.
+
+## Future comprehensive tests
+
+Keep the existing v3 regression tests as behavioral references. Once this
+workflow is stable, extend Django/Svelte tests to cover end-to-end editing,
+relational directionality, repeated imports, partial AI jobs, more complex
+OCR formats, Caddy publication and disaster recovery.

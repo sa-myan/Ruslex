@@ -1,8 +1,11 @@
 # Independent, reproducible frontend build. No Node process in production.
 FROM node:22-alpine AS frontend
 WORKDIR /build/frontend
-COPY frontend/package.json ./
-RUN npm install --no-audit --no-fund
+# If a lockfile exists, use reproducible installs; otherwise use the
+# initial bootstrap install. Generate and commit the lockfile on the VPS.
+COPY frontend/package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; \
+    else npm install --no-audit --no-fund; fi
 COPY frontend/ ./
 RUN npm run check && npm run build
 
@@ -13,7 +16,6 @@ RUN groupadd -r app && useradd -r -g app app
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 COPY backend/ /app/backend/
-COPY processing/ /app/processing/
 COPY scripts/ /app/scripts/
 COPY tests/ /app/tests/
 COPY --from=frontend /build/backend/frontend_static/ /app/backend/frontend_static/

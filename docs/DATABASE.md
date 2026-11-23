@@ -1,14 +1,33 @@
-# Database contract
+# Ruslex database contract
 
-The packaged dictionary is a copy of the user-supplied `lexicon(1).db`, not a generated empty schema. At packaging time it contains **1,710 lexemes, 2,954 senses, 361 sense-scoped relations, and 340 source pages**. SQLite `integrity_check` and `foreign_key_check` pass.
+Ruslex uses **two separate SQLite databases**. Their files are persistent data
+on the VPS, **not packaged artifacts and not part of Git**.
 
-| SQLite database | Purpose | Managed by |
-|---|---|---|
-| `lexicon/lexicon.db` | `lexemes`, `senses`, `examples`, `patterns`, `tags`, `sense_tags`, `books`, `pages`, `lexeme_pages`, `lexeme_relations`, `expression_components`, `external_links`, `reviews`, `surface_pages` and ancillary corpus data | Existing v3 schema; Django `managed=False` or scoped SQL |
-| `admin/admin.sqlite3` | Django users, auth groups and permissions, admin, sessions, migrations, `accounts_siteoptions` | Django migrations (default database only) |
+| Host path | Meaning | Owner of schema |
+| --- | --- | --- |
+| `/srv/data/ruslex/lexicon/lexicon.db` | Words, senses, tags, pages, reviews, expression components, relations and source evidence | Existing v3 schema; unmanaged Django models and explicit SQL |
+| `/srv/data/ruslex/admin/admin.sqlite3` | Django accounts, sessions, permissions, options and migrations | Django migrations (`default` alias) |
 
-The legacy model mapping is `backend/dictionary/models.py`. The router in `backend/siteconf/router.py` sends lexicon models only to the `lexicon` alias and all Django-owned apps to `default`. It rejects migrations targeting the lexicon.
+The original **reference snapshot** used during development contained 1,710
+lexemes, 2,954 senses, 361 relationships and 340 source pages. Those counts
+are *historical reference data*, not limits and not guaranteed current totals
+of the live dictionary. The reference `data/lexicon.db` file, when available,
+is an optional local test fixture; it must never be promoted automatically.
 
-Do not flatten relations at word-pair level: a relationship can bind a particular sense on each end, and some pairs intentionally contain multiple valid links. A repeated word pair does not automatically mean a duplicate record.
+`backend/dictionary/models.py` maps the existing lexicon tables using
+`managed=False`; `backend/siteconf/router.py` directs those operations to the
+`lexicon` alias and prevents Django's migrations from modifying its schema.
+The admin database uses the normal Django migration system.
 
-For safe backups, use `./manage.sh backup`; both databases are copied independently through the SQLite backup API. For long-running AI enrichment, operate on a detached staging snapshot and explicitly promote candidate data only after auditing. Never overwrite a live SQLite file with `cp` while another process holds it open.
+Sense-scoped relationships are not equivalent to undifferentiated word-pair
+relationships. Distinct sense-to-sense connections can share the same two
+headwords and must not be deleted automatically.
+
+Use `./manage.sh backup` for consistent SQLite snapshots and
+`./process.sh workspace` for isolated AI/OCR workspaces. **Never copy a
+running database's `.db` file to create a backup or replace the live database
+with an AI candidate**. `./process.sh promote NAME --confirm` is the only
+supported automatic promotion path; it preserves all existing live rows.
+
+See [BOOK_PROCESSING.md](BOOK_PROCESSING.md) and
+[OPERATIONS.md](OPERATIONS.md) for end-to-end data lifecycle procedures.

@@ -1,4 +1,4 @@
-"""Resumable enrichment and isolated candidate database assembly."""
+"""Resumable AI analysis and validated staging (no replacement build)."""
 import json
 import sqlite3
 import tempfile
@@ -49,10 +49,16 @@ def validated_model_batch(response, *, stage: str, batch, prompt: str, model: st
 
 def run(workspace: Path, *, stage: str, model: str, executable: str,
         batch_size: int, max_batches: int | None, timeout: int, dry_run=False,
-        verify_model: str | None = None):
+        verify_model: str | None = None, book: str | None = None):
     source = checked_workspace(workspace)
+    selection = workspace / f"selection-{stage}.json"
+    previous = json.loads(selection.read_text(encoding="utf-8")) if selection.exists() else None
+    if previous is not None and previous != {"book": book}:
+        raise RuntimeError("Enrichment scope changed; start a new workspace")
+    if previous is None and not dry_run:
+        atomic_json(selection, {"book": book})
     with read_database(source) as db:
-        todo = list(inputs(db, stage))
+        todo = list(inputs(db, stage, book=book))
     expected = len(todo)
     completed = 0
     for batch in chunks(todo, batch_size):
@@ -101,11 +107,11 @@ def run(workspace: Path, *, stage: str, model: str, executable: str,
             "remaining_batches": remaining, "batch_size": batch_size}
 
 
-def report(workspace: Path):
+def report(workspace: Path, *, book: str | None = None):
     source = checked_workspace(workspace)
     with read_database(source) as db:
-        total = {"lexemes": len(list(inputs(db, "lexemes"))),
-                 "pages": len(list(inputs(db, "pages")))}
+        total = {"lexemes": len(list(inputs(db, "lexemes", book=book))),
+                 "pages": len(list(inputs(db, "pages", book=book)))}
     complete = {}
     for stage in ("lexemes", "pages"):
         entries = 0
@@ -154,145 +160,4 @@ def find_or_add_word(db, lemma: str, pos: str, missing_words: set[str]):
     missing_words.add(f"{lemma}/{pos}")
     return cursor.lastrowid
 
-
-def build(workspace: Path, output: Path, *, allow_partial=False):
-    source = checked_workspace(workspace)
-    if output.exists():
-        raise FileExistsError("Output file already exists; choose another filename")
-    entries = {}
-    expressions = {}
-    with read_database(source) as db:
-        source_words = {row["id"]: dict(row) for row in db.execute(
-            "SELECT id,lemma,pos FROM lexemes WHERE human_status='kept' AND entry_type='word'")}
-        source_pages = {row["id"]: row["markdown"] for row in db.execute(
-            "SELECT id,markdown FROM pages")}
-        expected = {row[0] for row in db.execute(
-            "SELECT id FROM lexemes WHERE human_status='kept' AND entry_type='word'")}
-        expected_pages = {row[0] for row in db.execute("SELECT id FROM pages")}
-    for file in staged_files(workspace, "lexemes"):
-        data = json.loads(file.read_text(encoding="utf-8"))
-        group = data.get("input_ids", [])
-        if len(set(group)) != len(group) or any(i not in source_words for i in group):
-            raise ValueError("Invalid staged word IDs")
-        for item in validate_lexemes(data, {i: source_words[i] for i in group}):
-            if item["id"] in entries:
-                raise ValueError(f"Duplicate enriched lexeme ID: {item['id']}")
-            entries[item["id"]] = item
-    if not allow_partial and expected != set(entries):
-        raise RuntimeError(f"Enrichment incomplete: {len(expected - set(entries))} kept lexemes missing. "
-                           "Run remaining batches or explicitly use --allow-partial for a preview")
-    covered_pages = set()
-    for file in staged_files(workspace, "pages"):
-        staged = json.loads(file.read_text(encoding="utf-8"))
-        group = staged.get("input_ids", [])
-        if len(set(group)) != len(group) or any(i not in source_pages for i in group):
-            raise ValueError("Invalid staged page IDs")
-        if covered_pages & set(group):
-            raise ValueError("Page was processed in overlapping batches")
-        validate_pages(staged, {i: source_pages[i] for i in group})
-        covered_pages.update(group)
-    if not allow_partial and expected_pages != covered_pages:
-        raise RuntimeError(f"Expression mining incomplete: {len(expected_pages - covered_pages)} "
-                           "source pages unprocessed")
-    for file in staged_files(workspace, "pages"):
-        for expr in json.loads(file.read_text(encoding="utf-8"))["expressions"]:
-            key = (expr["lemma"].lower(), expr["pos"])
-            if key not in expressions:
-                expressions[key] = expr
-            else:
-                seen = {(a["page_id"], a["surface"]) for a in expressions[key]["attestations"]}
-                expressions[key]["attestations"].extend(
-                    a for a in expr["attestations"] if (a["page_id"], a["surface"]) not in seen)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(prefix=".enriched-", suffix=".db", dir=output.parent,
-                                     delete=False) as temp:
-        working = Path(temp.name)
-    missing_words = set()
-    unresolved_relations = []
-    try:
-        snapshot(source, working)
-        with write_database(working) as db:
-            db.execute("BEGIN IMMEDIATE")
-            # Do NOT touch book/page/review/source tables, personal notes,
-            # external links, lexeme IDs, or original kept/hidden decisions.
-            for name in ("sense_tags", "patterns", "examples", "lexeme_relations",
-                         "expression_components", "senses", "tags"):
-                db.execute("DELETE FROM " + name)
-            db.execute("UPDATE lexemes SET aspect=NULL,animacy=NULL WHERE entry_type='word'")
-            seed_tags(db)
-            sense_ids = {}
-            for entry_id, item in sorted(entries.items()):
-                db.execute("UPDATE lexemes SET aspect=?,animacy=? WHERE id=? AND entry_type='word'",
-                           (item["aspect"], item["animacy"], entry_id))
-                sense_ids[entry_id] = insert_senses(db, entry_id, item["senses"])
-            created_expressions = 0
-            for (lemma, pos), expr in sorted(expressions.items()):
-                row = db.execute("SELECT id,entry_type FROM lexemes WHERE lemma=? AND pos=?",
-                                 (lemma, pos)).fetchone()
-                if row and row["entry_type"] != "expression":
-                    raise ValueError(f"Expression conflicts with word entry: {lemma}/{pos}")
-                if row:
-                    expression_id = row["id"]
-                else:
-                    expression_id = db.execute("""INSERT INTO lexemes
-                        (lemma,pos,entry_type,human_status) VALUES(?,?,'expression','kept')""",
-                        (lemma, pos)).lastrowid
-                    created_expressions += 1
-                insert_senses(db, expression_id, expr["senses"])
-                for position, comp in enumerate(expr["components"], start=1):
-                    word_id = find_or_add_word(db, comp["lemma"], comp["pos"], missing_words)
-                    db.execute("""INSERT INTO expression_components
-                        (expression_id,word_id,position,surface) VALUES(?,?,?,?)""",
-                        (expression_id, word_id, position, comp["surface"]))
-                for att in expr["attestations"]:
-                    page = db.execute("SELECT markdown FROM pages WHERE id=?", (att["page_id"],)).fetchone()
-                    if page is None or normalized(att["surface"]) not in normalized(page[0]):
-                        raise RuntimeError("Attestation changed since validation")
-                    db.execute("""INSERT OR IGNORE INTO lexeme_pages
-                        (lexeme_id,page_id,surface,context,count) VALUES(?,?,?,?,1)""",
-                        (expression_id, att["page_id"], att["surface"], att["surface"]))
-            existing = {(row["lemma"], row["pos"]): (row["id"], row["aspect"])
-                        for row in db.execute("SELECT id,lemma,pos,aspect FROM lexemes")}
-            for source_id, item in entries.items():
-                for relation in item.get("relations", []):
-                    target_key = (relation["target_lemma"].strip().lower(), relation["target_pos"])
-                    target = existing.get(target_key)
-                    if not target:
-                        unresolved_relations.append({"source_id": source_id, **relation})
-                        continue
-                    target_id, target_aspect = target
-                    if source_id == target_id:
-                        continue
-                    if relation["type"] == "aspect_pair" and \
-                            {item["aspect"], target_aspect} != {"imperfective", "perfective"}:
-                        unresolved_relations.append({"source_id": source_id, **relation})
-                        continue
-                    first, second = sorted((source_id, target_id)) if relation["type"] in \
-                        {"aspect_pair", "synonym", "antonym", "related"} else (source_id, target_id)
-                    source_sense = None
-                    if relation.get("source_sense_index") is not None:
-                        source_sense = sense_ids[source_id][relation["source_sense_index"]]
-                    db.execute("""INSERT OR IGNORE INTO lexeme_relations
-                        (source_lexeme_id,target_lexeme_id,relation_type,source_sense_id)
-                        VALUES(?,?,?,?)""", (first, second, relation["type"],
-                                               source_sense if first == source_id else None))
-            issues = db.execute("PRAGMA foreign_key_check").fetchall()
-            if issues:
-                raise RuntimeError(f"Foreign key violations: {issues[:5]}")
-            db.commit()
-            if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                raise RuntimeError("Built database failed SQLite integrity_check")
-        working.replace(output)
-    finally:
-        if working.exists():
-            working.unlink()
-    result = {"database": str(output), "enriched_lexemes": len(entries),
-              "new_expressions": created_expressions,
-              "unresolved_relations": unresolved_relations,
-              "new_component_words_needing_enrichment": sorted(missing_words)}
-    atomic_json(output.with_suffix(".report.json"), result)
-    return {"database": str(output), "enriched_lexemes": len(entries),
-            "new_expressions": created_expressions,
-            "unresolved_relation_count": len(unresolved_relations),
-            "component_words_for_followup": len(missing_words)}
 

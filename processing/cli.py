@@ -1,53 +1,198 @@
-"""Offline AI tools: inventory, prepare, run, report, build. Never writes live DB."""
+"""On-demand VPS processing: OCR → AI review → optional enrichment → promotion.
+
+All commands operate on candidate databases in /work, except 'plan' which
+reads the live database and 'promote' which performs a guarded append-only
+transaction. The public website never calls this module.
+"""
+from __future__ import annotations
+
 import argparse
 import json
+from datetime import datetime, timezone
+from contextlib import closing
 from pathlib import Path
-from .storage import inventory, prepare
-from .workflow import run, report, build
+
+from .audit import connect_read_only, make_audit
+from .enrichment_merge import apply_enrichment
+from .forms import resolve, review_batch, apply_decisions
+from .ocr import import_book, inspect
+from .promotion import create_workspace, plan, promote, workspace_paths
+from .storage import inventory, prepare, read_database, write_database
+from .workflow import report, run
+
+LIVE_DB = Path("/live/lexicon.db")
+WORK_ROOT = Path("/work")
+OCR_ROOT = Path("/ocr")
+BACKUP_ROOT = Path("/backups")
+
+
+def workspace_dir(name: str) -> Path:
+    if not name or name in {".", ".."} or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for char in name):
+        raise ValueError("Workspace name must contain only letters, numbers, underscore or hyphen")
+    return WORK_ROOT / name
+
+
+def add_workspace(command):
+    command.add_argument("name", help="Workspace identifier, e.g. russian_book_2")
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest="command", required=True)
-    check = sub.add_parser("inventory")
-    check.add_argument("--db", required=True, type=Path)
-    setup = sub.add_parser("prepare")
-    setup.add_argument("--db", required=True, type=Path)
-    setup.add_argument("--workspace", required=True, type=Path)
-    execute = sub.add_parser("run")
-    execute.add_argument("--workspace", required=True, type=Path)
-    execute.add_argument("--stage", required=True, choices=("lexemes", "pages"))
-    execute.add_argument("--model", required=True, help="Exact provider/model ID from opencode models")
-    execute.add_argument("--opencode-bin", default="opencode")
-    execute.add_argument("--batch-size", type=int)
-    execute.add_argument("--max-batches", type=int)
-    execute.add_argument("--timeout", type=int, default=300)
-    execute.add_argument("--verify-model", help="Optional second independent LLM verification pass")
-    execute.add_argument("--dry-run", action="store_true")
-    status = sub.add_parser("report")
-    status.add_argument("--workspace", required=True, type=Path)
-    assemble = sub.add_parser("build")
-    assemble.add_argument("--workspace", required=True, type=Path)
-    assemble.add_argument("--out", required=True, type=Path)
-    assemble.add_argument("--allow-partial", action="store_true",
-                          help="Only for previewing an incomplete enrichment, NOT production")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    commands.add_parser("inventory", help="Read-only statistics on the live dictionary")
+    audit_cmd = commands.add_parser("audit", help="Read-only audit of live or staged dictionary")
+    audit_cmd.add_argument("--workspace", help="Optional candidate workspace name")
+    audit_cmd.add_argument("--sample-size", type=int, default=150)
+    create = commands.add_parser("workspace", help="Create isolated baseline and candidate from live")
+    add_workspace(create)
+    inspect_command = commands.add_parser("inspect-ocr", help="Preview Mistral OCR export without importing")
+    inspect_command.add_argument("input", type=Path, help="Source file or directory inside /ocr")
+
+    importing = commands.add_parser("import-ocr", help="Import OCR into candidate; never writes live")
+    add_workspace(importing)
+    importing.add_argument("--input", type=Path, required=True)
+    importing.add_argument("--book", required=True)
+    importing.add_argument("--edition", default="")
+    importing.add_argument("--first", required=True, type=int)
+    importing.add_argument("--last", required=True, type=int)
+    importing.add_argument("--offset", type=int, default=0)
+    importing.add_argument("--page-shift", type=int, default=0)
+
+    forms = commands.add_parser("resolve", help="Classify OCR forms with the configured LLM")
+    add_workspace(forms)
+    forms.add_argument("--book", required=True, help="Exact book title; avoids touching other books")
+    forms.add_argument("--model", required=True)
+    forms.add_argument("--batch-size", type=int, default=24)
+    forms.add_argument("--max-batches", type=int)
+    forms.add_argument("--timeout", type=int, default=240)
+    forms.add_argument("--retry", action="store_true")
+    forms.add_argument("--dry-run", action="store_true")
+
+    review_list = commands.add_parser("review-forms", help="List pending or uncertain OCR forms in candidate")
+    add_workspace(review_list)
+    review_list.add_argument("--book", required=True)
+    review_list.add_argument("--retry", action="store_true", help="Show uncertain rather than pending forms")
+    review_list.add_argument("--limit", type=int, default=30)
+
+    manual = commands.add_parser("decide-form", help="Manually accept/exclude a candidate OCR form")
+    add_workspace(manual)
+    manual.add_argument("--book", required=True)
+    manual.add_argument("--id", required=True, type=int)
+    manual.add_argument("--decision", required=True, choices=("admit", "exclude", "review"))
+    manual.add_argument("--lemma", help="Required with admit; must be a known morphological option")
+    manual.add_argument("--pos", help="Required with admit")
+
+    enrich_prepare = commands.add_parser("enrich-prepare", help="Snapshot candidate for resumable AI enrichment")
+    add_workspace(enrich_prepare)
+    enrich = commands.add_parser("enrich-run", help="Generate validated enrichment batches")
+    add_workspace(enrich)
+    enrich.add_argument("--stage", choices=("lexemes", "pages"), required=True)
+    enrich.add_argument("--book", help="Process only this textbook (recommended)")
+    enrich.add_argument("--model", required=True)
+    enrich.add_argument("--batch-size", type=int)
+    enrich.add_argument("--max-batches", type=int)
+    enrich.add_argument("--timeout", type=int, default=300)
+    enrich.add_argument("--verify-model")
+    enrich.add_argument("--dry-run", action="store_true")
+    enrich_status = commands.add_parser("enrich-report", help="Show enrichment progress")
+    add_workspace(enrich_status)
+    enrich_status.add_argument("--book", help="Same scope as enrichment runs")
+    enrich_apply = commands.add_parser("enrich-apply", help="Add only missing senses and expressions to candidate")
+    add_workspace(enrich_apply)
+    planning = commands.add_parser("plan", help="Compare candidate to live; rejects existing-record changes")
+    add_workspace(planning)
+    promotion = commands.add_parser("promote", help="Backup then transactionally append new rows to live")
+    add_workspace(promotion)
+    promotion.add_argument("--confirm", action="store_true", required=True)
+
     args = parser.parse_args(argv)
-    if args.command == "inventory":
-        result = inventory(args.db)
-    elif args.command == "prepare":
-        result = prepare(args.db, args.workspace)
-    elif args.command == "run":
-        batch_size = args.batch_size or (4 if args.stage == "lexemes" else 2)
-        if not 1 <= batch_size <= 8 or (args.max_batches is not None and args.max_batches < 1):
-            parser.error("batch-size must be 1–8 and max-batches must be positive")
-        result = run(args.workspace, stage=args.stage, model=args.model,
-                     executable=args.opencode_bin, batch_size=batch_size,
-                     max_batches=args.max_batches, timeout=args.timeout,
-                     dry_run=args.dry_run, verify_model=args.verify_model)
-    elif args.command == "report":
-        result = report(args.workspace)
-    else:
-        result = build(args.workspace, args.out, allow_partial=args.allow_partial)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    try:
+        if args.command == "inventory":
+            result = inventory(LIVE_DB)
+        elif args.command == "audit":
+            if not 0 <= args.sample_size <= 1000:
+                raise ValueError("--sample-size must be between 0 and 1000")
+            source = LIVE_DB
+            output_root = WORK_ROOT / "audits"
+            if args.workspace:
+                staging = workspace_dir(args.workspace)
+                _, source = workspace_paths(staging)
+                output_root = staging / "audits"
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+            directory = output_root / stamp
+            with closing(connect_read_only(source)) as db:
+                result = make_audit(db, directory, args.sample_size, seed=20261122)
+            result = {"report": str(directory / "audit_summary.md"), **result}
+        elif args.command == "inspect-ocr":
+            source = args.input.resolve()
+            if not source.is_relative_to(OCR_ROOT):
+                raise ValueError("OCR input must be under /ocr, mounted read-only")
+            result = inspect(source)
+        else:
+            workspace = workspace_dir(args.name)
+            if args.command == "workspace":
+                result = create_workspace(LIVE_DB, workspace)
+            else:
+                _, candidate = workspace_paths(workspace)
+                if args.command == "import-ocr":
+                    source = args.input.resolve()
+                    if not source.is_relative_to(OCR_ROOT):
+                        raise ValueError("OCR input must be under /ocr")
+                    with write_database(candidate) as db:
+                        result = import_book(
+                            db, title=args.book.strip(), edition=args.edition.strip(),
+                            source=source, first=args.first, last=args.last,
+                            offset=args.offset, page_shift=args.page_shift,
+                        )
+                elif args.command == "resolve":
+                    with write_database(candidate) as db:
+                        result = resolve(
+                            db, workspace=workspace, book=args.book, model=args.model,
+                            batch_size=args.batch_size, max_batches=args.max_batches,
+                            timeout=args.timeout, retry=args.retry, dry_run=args.dry_run,
+                        )
+                elif args.command == "review-forms":
+                    if not 1 <= args.limit <= 100:
+                        raise ValueError("--limit must be 1-100")
+                    with read_database(candidate) as db:
+                        result = {"forms": review_batch(db, args.book, args.limit, retry=args.retry)}
+                elif args.command == "decide-form":
+                    with write_database(candidate) as db:
+                        matches = review_batch(db, args.book, 100000, retry=False) + review_batch(
+                            db, args.book, 100000, retry=True)
+                        matching = [item for item in matches if item["id"] == args.id]
+                        if not matching:
+                            raise ValueError("Form ID not in this book's pending/review queue")
+                        entries = [{"lemma": args.lemma, "pos": args.pos}] if args.decision == "admit" else []
+                        if args.decision == "admit" and (not args.lemma or not args.pos):
+                            raise ValueError("Admit requires --lemma and --pos")
+                        result = apply_decisions(db, matching, {"results": [{
+                            "id": args.id, "decision": args.decision, "confidence": "high",
+                            "entries": entries, "reason": "Manually reviewed on VPS",
+                        }]}, "manual")
+                elif args.command == "enrich-prepare":
+                    result = prepare(candidate, workspace / "enrichment")
+                elif args.command == "enrich-run":
+                    result = run(
+                        workspace / "enrichment", stage=args.stage, model=args.model,
+                        executable="opencode", batch_size=args.batch_size or (4 if args.stage == "lexemes" else 2),
+                        max_batches=args.max_batches, timeout=args.timeout,
+                        dry_run=args.dry_run, verify_model=args.verify_model, book=args.book,
+                    )
+                elif args.command == "enrich-report":
+                    result = report(workspace / "enrichment", book=args.book)
+                elif args.command == "enrich-apply":
+                    result = apply_enrichment(workspace)
+                elif args.command == "plan":
+                    result = plan(LIVE_DB, workspace)
+                elif args.command == "promote":
+                    result = promote(LIVE_DB, workspace, BACKUP_ROOT, confirmed=args.confirm)
+                else:
+                    parser.error("Unknown command")
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    except (ValueError, RuntimeError, FileNotFoundError, FileExistsError) as exc:
+        parser.exit(1, f"ERROR: {exc}\n")
 
 
 if __name__ == "__main__":
