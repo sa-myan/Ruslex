@@ -78,12 +78,43 @@ def build():
     compose("build", "web")
 
 
+def preserve_previous_image() -> str:
+    """Preserve the deployed image if Docker can still access it locally.
+
+    Compose can report the ID recorded on a container even after that image
+    has disappeared from the local image store. Such an ID cannot be tagged.
+    This is a missing rollback opportunity, not a reason to stop a release.
+    """
+    image_ids = compose("images", "-q", "web", capture=True).splitlines()
+    if not image_ids:
+        print("No previous web image found; this release has no image rollback point")
+        return ""
+
+    for image_id in image_ids:
+        try:
+            # Check *before* tagging: a container's historical image ID may
+            # no longer exist in Docker's local image store.
+            call("docker", "image", "inspect", image_id, capture=True)
+            call("docker", "image", "tag", image_id, "ruslex:previous")
+            return image_id
+        except subprocess.CalledProcessError:
+            print(
+                f"WARNING: Previous web image {image_id} is not available "
+                "for tagging; cannot preserve it for rollback",
+                file=sys.stderr,
+            )
+
+    print(
+        "WARNING: No usable previous image was saved. The release can "
+        "continue, but automatic image rollback will not be available.",
+        file=sys.stderr,
+    )
+    return ""
+
+
 def deploy(*, allow_dirty=False):
     root = preflight(allow_dirty)
-    previous_image = compose("images", "-q", "web", capture=True).splitlines()
-    previous_image = previous_image[0] if previous_image else ""
-    if previous_image:
-        call("docker", "image", "tag", previous_image, "ruslex:previous")
+    previous_image = preserve_previous_image()
     build()
     # Back up both databases before any admin migration or service replacement.
     call(sys.executable, "scripts/backup.py")
@@ -94,8 +125,17 @@ def deploy(*, allow_dirty=False):
     except Exception:
         print("Deployment failed; attempting to restore the previous web image", file=sys.stderr)
         if previous_image:
-            call("docker", "image", "tag", previous_image, "ruslex:local")
+            # The saved tag is the verified rollback image, even if Docker
+            # changed other tags or removed the original ID during the build.
+            call("docker", "image", "tag", "ruslex:previous", "ruslex:local")
             compose("up", "-d", "--no-deps", "--force-recreate", "web")
+        else:
+            print(
+                "WARNING: No previous image was available; the previous "
+                "website cannot be restored automatically. See "
+                "docs/DEPLOYMENT.md for manual recovery.",
+                file=sys.stderr,
+            )
         # Admin DB migration rollback requires an explicit restore procedure.
         raise
     output = {"timestamp": datetime.now(timezone.utc).isoformat(),

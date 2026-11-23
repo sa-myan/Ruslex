@@ -35,7 +35,10 @@ git pull --ff-only
 ### What happens inside `deploy`
 
 1. Check `.env`, dictionary integrity, Compose config and `proxy` network.
-2. Preserve the last web image under Docker tag `ruslex:previous` (if present).
+2. If the running web image is still present in the local Docker image store,
+   preserve it under `ruslex:previous`. A Compose-reported image ID is not
+   necessarily taggable if Docker has removed the underlying image. In that
+   case, **warn and continue** without automatic image rollback.
 3. Build and check the new frontend+backend image.
 4. Make consistent online snapshots of **both** databases.
 5. Run Django `check_lexicon`, `migrate --database=default`,
@@ -48,8 +51,16 @@ legacy and is not recreated by Django. The runtime entrypoint is deliberately
 simple: it starts Gunicorn and **does not run migrations automatically**.
 
 If web replacement fails, the release script attempts to restart the previous
-image. That is **not** a guaranteed database rollback; consult the backup
-records and examine any admin-schema migration before reverting.
+image **only when it was successfully saved**. When it was unavailable, the
+script clearly reports that automatic image rollback is impossible. The
+original running container is unaffected until Compose recreates it; do not
+manually remove that container to work around an image warning.
+
+If a release fails and no previous image was saved, inspect logs, fix the
+problem, then rebuild and redeploy a known-good Git revision. Restore data
+only when a migration or data change actually requires it. An image rollback
+is **not** a database rollback; consult the backup records and examine any
+admin-schema migration before reverting.
 
 ### Check a patch or an uncommitted change
 
