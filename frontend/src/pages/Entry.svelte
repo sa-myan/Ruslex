@@ -1,66 +1,92 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { request,mutate,navigate,editMode,reviewMode,user } from '../lib/api';
-  import type {Entry as EntryType,Metadata,Summary,Status,Tag} from '../lib/types';
+  import { onDestroy, onMount } from 'svelte';
+  import { request, mutate } from '../lib/http';
+  import { navigate } from '../lib/navigation';
+  import { editMode, reviewMode, user } from '../lib/session';
+  import { errorMessage } from '../lib/errors';
+  import type { Entry as DictionaryEntry, Metadata, Status, Tag } from '../lib/types';
+
+  import EntryIdentityForm from '../components/entry/EntryIdentityForm.svelte';
+  import ExpressionComponents from '../components/entry/ExpressionComponents.svelte';
+  import ExternalLinks from '../components/entry/ExternalLinks.svelte';
   import SenseCard from '../components/SenseCard.svelte';
   import RelationList from '../components/RelationList.svelte';
-  import EntryPicker from '../components/EntryPicker.svelte';
-  export let wordId:number;
-  let entry:EntryType|null=null;let meta:Metadata|null=null;let availableTags:Tag[]=[];let busy=true;let error='';let notice='';
+
+  export let wordId: number;
+
+  const reviewStatuses: Status[] = ['unreviewed', 'kept', 'followup', 'hidden'];
+
+  let entry: DictionaryEntry | null = null;
+  let metadata: Metadata | null = null;
+  let availableTags: Tag[] = [];
+  let isLoading = true;
+  let error = '';
+  let notice = '';
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-  let showArchived=false;let editIdentity=false;let lemma='';let pos='NOUN';let entryType='word';let aspect='';let animacy='';
-  let notes='';let newSense=false;let newMeaning='';let newDescription='';
-  let newLink=false;let linkId:number|null=null;let label='';let url='';
-  let newComponent=false;let selected:Summary|null=null;let compPosition=1;let compSurface='';let compNotes='';let compId:number|null=null;
-  $: visibleSenses = entry?.senses.filter(s => s.active || ($editMode && showArchived)) || [];
+
+  let showArchived = false;
+  let isEditingIdentity = false;
+  let isAddingSense = false;
+  let newMeaning = '';
+  let newDescription = '';
+  let notes = '';
+
+  $: visibleSenses = entry?.senses.filter(
+    (sense) => sense.active || ($editMode && showArchived),
+  ) ?? [];
+
   onMount(() => {
     void refresh();
-    void request<Metadata>('/api/meta').then(data => meta = data).catch(() => {});
+    void loadMetadata();
     void reloadTags();
   });
+  onDestroy(() => clearTimeout(noticeTimer));
+
+  async function loadMetadata(): Promise<void> {
+    try {
+      metadata = await request<Metadata>('/api/meta');
+    } catch (err) {
+      error = `Unable to load entry metadata: ${errorMessage(err)}`;
+    }
+  }
 
   async function reloadTags(): Promise<void> {
     try {
       availableTags = await request<Tag[]>('/api/tags');
     } catch (err) {
-      error = `Unable to load existing tags: ${(err as Error).message}`;
+      error = `Unable to load existing tags: ${errorMessage(err)}`;
     }
   }
 
-  onDestroy(() => clearTimeout(noticeTimer));
-
-  function clearNotice() {
+  function clearNotice(): void {
     clearTimeout(noticeTimer);
     notice = '';
   }
 
-  function showSaved() {
+  function showSaved(): void {
     clearNotice();
     notice = 'Saved';
-    noticeTimer = setTimeout(() => notice = '', 3000);
+    noticeTimer = setTimeout(() => { notice = ''; }, 3000);
   }
 
   async function refresh(): Promise<boolean> {
-    busy = true;
+    isLoading = true;
     error = '';
     try {
-      entry = await request<EntryType>(`/api/lexemes/${wordId}`);
-      notes = entry.notes;
-      lemma = entry.lemma;
-      pos = entry.pos;
-      entryType = entry.entry_type;
-      aspect = entry.aspect || '';
-      animacy = entry.animacy || '';
+      const updatedEntry = await request<DictionaryEntry>(`/api/lexemes/${wordId}`);
+      entry = updatedEntry;
+      notes = updatedEntry.notes;
       return true;
     } catch (err) {
-      error = (err as Error).message;
+      error = errorMessage(err);
       return false;
     } finally {
-      busy = false;
+      isLoading = false;
     }
   }
 
-  async function persist(action: () => Promise<unknown>): Promise<boolean> {
+  /** Only acknowledge a save once Django has accepted it and the entry reload succeeds. */
+  async function saveChange(action: () => Promise<unknown>): Promise<boolean> {
     clearNotice();
     error = '';
     try {
@@ -69,90 +95,38 @@
       showSaved();
       return true;
     } catch (err) {
-      error = (err as Error).message;
+      error = errorMessage(err);
       return false;
     }
   }
 
-  async function doUpdate(body: object): Promise<boolean> {
-    return persist(() => mutate(`/api/lexemes/${wordId}`, 'PATCH', body));
+  function updateEntry(fields: Record<string, unknown>): Promise<boolean> {
+    return saveChange(() => mutate(`/api/lexemes/${wordId}`, 'PATCH', fields));
   }
 
-  async function saveIdentity() {
-    const saved = await doUpdate({
-      lemma, pos, entry_type: entryType,
-      aspect: aspect || null, animacy: animacy || null
-    });
-    if (saved) editIdentity = false;
-  }
-
-  async function saveSense() {
-    const saved = await persist(() => mutate(`/api/lexemes/${wordId}/senses`, 'POST', {
-      meaning: newMeaning, description: newDescription
+  async function addSense(): Promise<void> {
+    const saved = await saveChange(() => mutate(`/api/lexemes/${wordId}/senses`, 'POST', {
+      meaning: newMeaning,
+      description: newDescription,
     }));
     if (saved) {
-      newSense = false;
+      isAddingSense = false;
       newMeaning = '';
       newDescription = '';
     }
   }
-
-  async function saveLink() {
-    const endpoint = `/api/lexemes/${wordId}/external-links${linkId ? `/${linkId}` : ''}`;
-    const saved = await persist(() => mutate(endpoint, linkId ? 'PUT' : 'POST', { label, url }));
-    if (saved) {
-      newLink = false;
-      linkId = null;
-    }
-  }
-
-  function linkEdit(link: EntryType['external_links'][number]) {
-    linkId = link.id;
-    label = link.label;
-    url = link.url;
-    newLink = true;
-  }
-
-  async function deleteLink(id: number) {
-    if (!confirm('Remove this link?')) return;
-    await persist(() => mutate(`/api/lexemes/${wordId}/external-links/${id}`, 'DELETE'));
-  }
-
-  function addComponent(){newComponent=true;compId=null;selected=null;compSurface='';compNotes='';
-    compPosition=Math.max(0,...(entry?.components.map(c=>c.position)||[]))+1;}
-  function editComponent(c:EntryType['components'][number]){newComponent=true;compId=c.id;
-    selected={id:c.word_id,lemma:c.word_lemma,pos:c.word_pos} as Summary;
-    compPosition=c.position;compSurface=c.surface;compNotes=c.notes;}
-  async function saveComponent() {
-    if (!selected) {
-      error = 'Choose a dictionary word';
-      clearNotice();
-      return;
-    }
-    const endpoint = `/api/lexemes/${wordId}/components${compId ? `/${compId}` : ''}`;
-    const saved = await persist(() => mutate(endpoint, compId ? 'PUT' : 'POST', {
-      word_id: selected!.id,
-      position: Number(compPosition),
-      surface: compSurface,
-      notes: compNotes
-    }));
-    if (saved) newComponent = false;
-  }
-
-  async function deleteComponent(id: number) {
-    if (!confirm('Remove constituent?')) return;
-    await persist(() => mutate(`/api/lexemes/${wordId}/components/${id}`, 'DELETE'));
-  }
-
-  function links(lemma:string){const q=encodeURIComponent(lemma);return [
-    {label:'Gramota',url:`https://gramota.ru/poisk?mode=slovari&query=${q}`},
-    {label:'OpenRussian',url:`https://en.openrussian.org/?search=${q}`},
-    {label:'Multitran',url:`https://www.multitran.com/m.exe?l1=2&l2=1&s=${q}`},
-    {label:'Wiktionary',url:`https://ru.wiktionary.org/wiki/${q}`}];}
 </script>
-<button class="btn btn-ghost btn-sm mb-4" on:click={()=>navigate('/')}>← Dictionary</button>
-{#if busy && !entry}<div class="loading loading-spinner"></div>{/if}
-{#if error}<div class="alert alert-error mb-4">{error}</div>{/if}
+
+<button class="btn btn-ghost btn-sm mb-4" on:click={() => navigate('/')}>
+  ← Dictionary
+</button>
+
+{#if isLoading && !entry}
+  <div class="loading loading-spinner"></div>
+{/if}
+{#if error}
+  <div class="alert alert-error mb-4" role="alert">{error}</div>
+{/if}
 {#if notice}
   <div class="toast toast-top toast-end z-50" aria-live="polite">
     <div class="alert alert-success shadow-lg" role="status">
@@ -161,101 +135,157 @@
     </div>
   </div>
 {/if}
+
 {#if entry}
   <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
-    <div><p class="kicker">{entry.entry_type==='expression'?'Expression':'Dictionary entry'}</p>
+    <div>
+      <p class="kicker">{entry.entry_type === 'expression' ? 'Expression' : 'Dictionary entry'}</p>
       <h2 class="text-3xl md:text-4xl russian font-bold mt-2">{entry.lemma}</h2>
-      <div class="flex flex-wrap gap-2 mt-3"><span class="badge badge-neutral">{entry.pos}</span>
+      <div class="flex flex-wrap gap-2 mt-3">
+        <span class="badge badge-neutral">{entry.pos}</span>
         {#if entry.aspect}<span class="badge badge-outline">{entry.aspect}</span>{/if}
         {#if entry.animacy}<span class="badge badge-outline">{entry.animacy}</span>{/if}
-        {#if $reviewMode}<span class="badge badge-warning">{entry.human_status}</span>{/if}</div>
+        {#if $reviewMode}<span class="badge badge-warning">{entry.human_status}</span>{/if}
+      </div>
     </div>
     <div class="flex gap-2 flex-wrap">
-      <button class="btn btn-outline btn-sm" on:click={()=>navigate(`/word/${wordId}/references`)}>References ({entry.source_page_count})</button>
-      {#if $editMode}<button class="btn btn-primary btn-sm" on:click={()=>editIdentity=!editIdentity}>Edit entry</button>{/if}
+      <button
+        class="btn btn-outline btn-sm"
+        on:click={() => navigate(`/word/${wordId}/references`)}
+      >References ({entry.source_page_count})</button>
+      {#if $editMode}
+        <button class="btn btn-primary btn-sm" on:click={() => { isEditingIdentity = !isEditingIdentity; }}>
+          Edit entry
+        </button>
+      {/if}
     </div>
   </div>
-  {#if editIdentity && $editMode}
-    <form class="surface p-5 mb-4 space-y-3" on:submit|preventDefault={saveIdentity}>
-      <div class="grid md:grid-cols-2 gap-3"><label class="field"><span>Russian headword</span><input bind:value={lemma} required /></label>
-        <label class="field"><span>Part of speech</span><select bind:value={pos}>{#each meta?.parts_of_speech || [] as part}<option value={part.code}>{part.label} ({part.code})</option>{/each}</select></label>
-        <label class="field"><span>Entry type</span><select bind:value={entryType}><option value="word">Word</option><option value="expression">Expression</option></select></label>
-        <label class="field"><span>Aspect</span><select bind:value={aspect}><option value="">Not set</option>{#each meta?.aspects || [] as v}<option value={v}>{v}</option>{/each}</select></label>
-        <label class="field"><span>Noun animacy</span><select bind:value={animacy}><option value="">Not set</option>{#each meta?.animacies || [] as v}<option value={v}>{v}</option>{/each}</select></label></div>
-      <button class="btn btn-primary">Save details</button><button class="btn ml-2" type="button" on:click={()=>editIdentity=false}>Cancel</button>
-    </form>
+
+  {#if isEditingIdentity && $editMode}
+    <EntryIdentityForm
+      {entry}
+      {metadata}
+      onSave={updateEntry}
+      onCancel={() => { isEditingIdentity = false; }}
+    />
   {/if}
+
   {#if $reviewMode && $user?.can_review}
     <section class="surface p-4 mb-4 flex gap-2 items-center flex-wrap">
       <span class="meta-label mr-2">Review</span>
-      {#each ['unreviewed','kept','followup','hidden'] as value}
-        <button class={`btn btn-sm ${entry.human_status===value?'btn-primary':'btn-outline'}`}
-          on:click={()=>doUpdate({human_status:value as Status})}>{value}</button>
+      {#each reviewStatuses as status}
+        <button
+          class={`btn btn-sm ${entry.human_status === status ? 'btn-primary' : 'btn-outline'}`}
+          on:click={() => updateEntry({ human_status: status })}
+        >{status}</button>
       {/each}
     </section>
   {/if}
+
   {#if visibleSenses.length || $editMode}
-  <div class="flex justify-between items-center mb-3"><h3 class="text-xl font-semibold">Meanings</h3>
-    {#if $editMode}<button class="btn btn-primary btn-sm" on:click={()=>newSense=!newSense}>+ Add meaning</button>{/if}</div>
-  {#if newSense && $editMode}<form class="surface p-4 space-y-2 mb-4" on:submit|preventDefault={saveSense}>
-    <label class="field"><span>English meaning</span><textarea bind:value={newMeaning} required></textarea></label>
-    <label class="field"><span>Description</span><textarea bind:value={newDescription}></textarea></label>
-    <button class="btn btn-primary btn-sm">Save meaning</button>
-  </form>{/if}
-  {#if $editMode}<label class="label text-sm mb-2 gap-2"><input class="checkbox checkbox-sm" type="checkbox" bind:checked={showArchived} />Show archived meanings</label>{/if}
-  {#each visibleSenses as sense (sense.id)}
-    <SenseCard {entry} {sense} {refresh} {availableTags} {reloadTags} onSaved={showSaved} onSaveStart={clearNotice} />
-  {/each}
+    <div class="flex justify-between items-center mb-3">
+      <h3 class="text-xl font-semibold">Meanings</h3>
+      {#if $editMode}
+        <button class="btn btn-primary btn-sm" on:click={() => { isAddingSense = !isAddingSense; }}>
+          + Add meaning
+        </button>
+      {/if}
+    </div>
+
+    {#if isAddingSense && $editMode}
+      <form class="surface p-4 space-y-2 mb-4" on:submit|preventDefault={addSense}>
+        <label class="field">
+          <span>English meaning</span>
+          <textarea bind:value={newMeaning} required></textarea>
+        </label>
+        <label class="field">
+          <span>Description</span>
+          <textarea bind:value={newDescription}></textarea>
+        </label>
+        <button class="btn btn-primary btn-sm">Save meaning</button>
+      </form>
+    {/if}
+
+    {#if $editMode}
+      <label class="label text-sm mb-2 gap-2">
+        <input class="checkbox checkbox-sm" type="checkbox" bind:checked={showArchived} />
+        Show archived meanings
+      </label>
+    {/if}
+    {#each visibleSenses as sense (sense.id)}
+      <SenseCard
+        {entry}
+        {sense}
+        {refresh}
+        {availableTags}
+        {reloadTags}
+        onSaved={showSaved}
+        onSaveStart={clearNotice}
+      />
+    {/each}
   {/if}
-  <RelationList {entry} scope={null} {refresh} onSaved={showSaved} onSaveStart={clearNotice} />
-  {#if entry.entry_type==='expression' && (entry.components.length || $editMode)}<section class="surface p-5 mt-5">
-    <div class="panel-header"><h3 class="text-xl font-semibold">Constituent words</h3>
-      {#if $editMode}<button class="btn btn-outline btn-sm" on:click={addComponent}>+ Add</button>{/if}</div>
-    {#each entry.components as c}<div class="flex flex-wrap gap-3 py-2 border-b border-base-300">
-      <span class="opacity-50">{c.position}.</span><a class="link link-primary" href={`/word/${c.word_id}`} on:click={(e)=>{e.preventDefault();navigate(`/word/${c.word_id}`);}}>{c.word_lemma}</a>
-      <span>{c.surface}</span>{#if $editMode}<button class="btn btn-xs" on:click={()=>editComponent(c)}>Edit</button><button class="btn btn-xs" on:click={()=>deleteComponent(c.id)}>Remove</button>{/if}
-    </div>{/each}
-    {#if newComponent && $editMode}<form class="mt-4 space-y-2" on:submit|preventDefault={saveComponent}>
-      <div class="field"><span>Constituent word</span><EntryPicker {selected} onSelect={(x)=>selected=x}/></div>
-      <label class="field"><span>Position</span><input type="number" min="1" bind:value={compPosition}/></label>
-      <label class="field"><span>Surface in expression</span><input bind:value={compSurface}/></label>
-      <label class="field"><span>Notes</span><textarea bind:value={compNotes}></textarea></label>
-      <button class="btn btn-primary">Save constituent</button><button class="btn ml-2" type="button" on:click={()=>newComponent=false}>Cancel</button></form>{/if}
-  </section>{/if}
-  {#if entry.occurs_in.length}<section class="surface p-5 mt-5"><h3 class="font-semibold">Occurs in expressions</h3>
-    <div class="flex gap-3 flex-wrap mt-3">{#each entry.occurs_in as c}<a class="link link-primary" href={`/word/${c.expression_id}`} on:click={(e)=>{e.preventDefault();navigate(`/word/${c.expression_id}`);}}>{c.expression_lemma}</a>{/each}</div>
-  </section>{/if}
-  <section class="surface p-5 mt-5"><div class="panel-header"><h3 class="text-xl font-semibold">External dictionaries</h3>
-    {#if $editMode}<button class="btn btn-sm btn-outline" on:click={()=>{newLink=true;linkId=null;label='';url='';}}>+ Custom link</button>{/if}</div>
-    <div class="flex flex-wrap gap-x-5 gap-y-3">
-      {#each links(entry.lemma) as link}
-        <div><a class="link link-primary" href={link.url} target="_blank" rel="noopener noreferrer">{link.label} ↗</a></div>
-      {/each}
-      {#each entry.external_links as link (link.id)}
-        <div><a class="link link-primary" href={link.url} target="_blank" rel="noopener noreferrer">{link.label} ↗</a>
-          {#if $editMode}<button class="btn btn-ghost btn-xs" on:click={()=>linkEdit(link)}>Edit</button><button class="btn btn-ghost btn-xs" on:click={()=>deleteLink(link.id)}>Remove</button>{/if}
+
+  <RelationList
+    {entry}
+    scope={null}
+    {refresh}
+    onSaved={showSaved}
+    onSaveStart={clearNotice}
+  />
+
+  <ExpressionComponents {entry} {saveChange} />
+
+  {#if entry.occurs_in.length}
+    <section class="surface p-5 mt-5">
+      <h3 class="font-semibold">Occurs in expressions</h3>
+      <div class="flex gap-3 flex-wrap mt-3">
+        {#each entry.occurs_in as component}
+          <a
+            class="link link-primary"
+            href={`/word/${component.expression_id}`}
+            on:click={(event) => {
+              event.preventDefault();
+              navigate(`/word/${component.expression_id}`);
+            }}
+          >{component.expression_lemma}</a>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
+  <ExternalLinks {entry} {saveChange} />
+
+  {#if entry.sources.length || entry.source_page_count}
+    <section class="surface p-5 mt-5">
+      <div class="panel-header">
+        <h3 class="text-xl font-semibold">Textbook evidence</h3>
+        <button class="btn btn-outline btn-sm" on:click={() => navigate(`/word/${wordId}/references`)}>
+          All references
+        </button>
+      </div>
+      {#each entry.sources as source}
+        <div class="py-2 border-b border-base-300">
+          <div class="text-xs opacity-60">
+            {source.title} · PDF {source.pdf_page} · printed {source.printed_page} · {source.surface}
+          </div>
+          <p class="russian text-sm mt-1">{source.context}</p>
         </div>
       {/each}
-    </div>
-    {#if newLink && $editMode}<form class="mt-4 space-y-2" on:submit|preventDefault={saveLink}>
-      <label class="field"><span>Label</span><input bind:value={label} required maxlength="80" /></label>
-      <label class="field"><span>URL</span><input type="url" bind:value={url} required maxlength="2048" /></label>
-      <button class="btn btn-primary btn-sm">Save link</button><button class="btn btn-sm ml-2" type="button" on:click={()=>newLink=false}>Cancel</button>
-    </form>{/if}
-  </section>
-  {#if entry.sources.length || entry.source_page_count}
-  <section class="surface p-5 mt-5"><div class="panel-header"><h3 class="text-xl font-semibold">Textbook evidence</h3>
-    <button class="btn btn-outline btn-sm" on:click={()=>navigate(`/word/${wordId}/references`)}>All references</button></div>
-    {#each entry.sources as source}<div class="py-2 border-b border-base-300"><div class="text-xs opacity-60">{source.title} · PDF {source.pdf_page} · printed {source.printed_page} · {source.surface}</div>
-      <p class="russian text-sm mt-1">{source.context}</p></div>{/each}
-  </section>
+    </section>
   {/if}
+
   {#if entry.notes.trim() || $editMode}
     <section class="surface p-5 mt-5">
       <h3 class="font-semibold mb-3">Notes</h3>
       {#if $editMode}
-        <form on:submit|preventDefault={() => doUpdate({notes})}>
-          <textarea class="textarea textarea-bordered w-full" aria-label="Entry notes" rows="4" bind:value={notes} maxlength="5000"></textarea>
+        <form on:submit|preventDefault={() => updateEntry({ notes })}>
+          <textarea
+            class="textarea textarea-bordered w-full"
+            aria-label="Entry notes"
+            rows="4"
+            bind:value={notes}
+            maxlength="5000"
+          ></textarea>
           <button class="btn btn-primary btn-sm mt-2">Save notes</button>
         </form>
       {:else}

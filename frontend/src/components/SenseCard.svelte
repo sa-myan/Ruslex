@@ -1,8 +1,11 @@
 <script lang="ts">
-  import { mutate, editMode } from '../lib/api';
+  import { mutate } from '../lib/http';
+  import { errorMessage } from '../lib/errors';
+  import { editMode } from '../lib/session';
   import type { Entry, Sense, Tag } from '../lib/types';
   import RecordList from './RecordList.svelte';
   import RelationList from './RelationList.svelte';
+  import TagPicker from './TagPicker.svelte';
 
   export let entry: Entry;
   export let sense: Sense;
@@ -15,17 +18,8 @@
   let editing = false;
   let meaning = '';
   let description = '';
-  let tagName = '';
-  let category = 'semantic';
-  let tagQuery = '';
   let busyTag = false;
   let error = '';
-
-  $: suggestedTags = availableTags
-    .filter(tag => !sense.tags.some(current => current.id === tag.id))
-    .filter(tag => `${tag.name} ${tag.category}`.toLowerCase().includes(tagQuery.trim().toLowerCase()))
-    .sort((a, b) => (b.sense_count ?? 0) - (a.sense_count ?? 0) || a.name.localeCompare(b.name))
-    .slice(0, 8);
 
   function start() {
     editing = true;
@@ -44,7 +38,7 @@
         onSaved();
       }
     } catch (err) {
-      error = (err as Error).message;
+      error = errorMessage(err);
     }
   }
 
@@ -55,7 +49,7 @@
       await mutate(`/api/lexemes/${entry.id}/records/senses/${sense.id}/active`, 'PATCH', { active: !sense.active });
       if (await refresh()) onSaved();
     } catch (err) {
-      error = (err as Error).message;
+      error = errorMessage(err);
     }
   }
 
@@ -69,23 +63,22 @@
         category: selectedCategory
       });
       if (await refresh()) {
-        tagQuery = '';
-        tagName = '';
         onSaved();
         return true;
       }
       return false;
     } catch (err) {
-      error = (err as Error).message;
+      error = errorMessage(err);
       return false;
     } finally {
       busyTag = false;
     }
   }
 
-  async function addTag() {
-    if (!tagName.trim()) return;
-    if (await attachTag(tagName.trim(), category)) await reloadTags();
+  async function createTag(name: string, category: string): Promise<boolean> {
+    const saved = await attachTag(name, category);
+    if (saved) await reloadTags();
+    return saved;
   }
 
   async function removeTag(id: number) {
@@ -96,7 +89,7 @@
       await mutate(`/api/lexemes/${entry.id}/senses/${sense.id}/tags/${id}`, 'DELETE');
       if (await refresh()) onSaved();
     } catch (err) {
-      error = (err as Error).message;
+      error = errorMessage(err);
     } finally {
       busyTag = false;
     }
@@ -143,46 +136,13 @@
   {/if}
 
   {#if $editMode}
-    <div class="mt-3 space-y-2">
-      <label class="field">
-        <span>Add existing tag</span>
-        <input
-          type="search"
-          class="input input-bordered input-sm"
-          placeholder="Filter available tags…"
-          aria-label="Find an existing tag"
-          bind:value={tagQuery}
-        />
-      </label>
-      <div class="flex flex-wrap gap-2">
-        {#each suggestedTags as tag (tag.id)}
-          <button
-            type="button"
-            class="badge badge-outline cursor-pointer hover:bg-base-200"
-            title={`${tag.category} tag — ${tag.sense_count ?? 0} senses`}
-            disabled={busyTag}
-            on:click={() => attachTag(tag.name, tag.category)}
-          >
-            + {tag.name} <span class="opacity-60">({tag.category})</span>
-          </button>
-        {/each}
-        {#if tagQuery.trim() && suggestedTags.length === 0}
-          <span class="text-xs opacity-60">No matching unassigned tags.</span>
-        {/if}
-      </div>
-      <details class="text-sm">
-        <summary class="cursor-pointer text-primary">Create a new tag</summary>
-        <form class="mt-2 flex gap-2 flex-wrap items-center" on:submit|preventDefault={addTag}>
-          <input class="input input-bordered input-sm" placeholder="New tag name" bind:value={tagName} required maxlength="48" />
-          <select class="select select-bordered select-sm" bind:value={category}>
-            <option value="semantic">semantic</option>
-            <option value="grammatical">grammatical</option>
-            <option value="usage">usage</option>
-          </select>
-          <button class="btn btn-outline btn-sm" disabled={busyTag}>Add tag</button>
-        </form>
-      </details>
-    </div>
+    <TagPicker
+      {sense}
+      {availableTags}
+      busy={busyTag}
+      onAttach={attachTag}
+      onCreate={createTag}
+    />
   {/if}
 
   <RecordList wordId={entry.id} senseId={sense.id} kind="patterns" items={sense.patterns} {refresh} {onSaved} {onSaveStart} />
