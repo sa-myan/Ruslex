@@ -1,0 +1,32 @@
+name: ruslex
+services:
+  web:
+    build: .
+    image: ruslex:local
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8790:8000"
+    volumes:
+      - "${DATA_ROOT}:/data"
+    networks:
+      default: {}
+      proxy:
+        aliases:
+          - ruslex-web
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+networks:
+  proxy:
+    external: true

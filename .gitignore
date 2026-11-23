@@ -1,0 +1,26 @@
+.env
+*.db
+*.sqlite3
+__pycache__/
+*.pyc
+frontend/node_modules/
+backend/collected_static/
+backend/frontend_static/
+.cache/
+.DS_Store
+
+# Additional secrets and local environments
+.env.*
+!.env.example
+.venv/
+venv/
+*.pem
+*.key
+
+# SQLite temporary files and backups
+*.db-*
+*.sqlite3-*
+*.bak
+
+# Local archives
+*.zip
