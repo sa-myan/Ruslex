@@ -11,9 +11,12 @@ There is only **one runtime service**: `web`. The frontend is built by Vite at i
 - `siteconf/` — environment-backed configuration, Caddy-aware HTTPS settings and database routing.
 - `accounts/` — Django users, groups, session authentication, permission checks, registration control, admin interface. No custom authentication database code.
 - `dictionary/models.py` — explicit mappings of the existing v3 dictionary tables; `managed=False`.
-- `dictionary/queries.py` — read-only search, references, review queue, statistics, entry serialization; includes narrowly scoped SQL for legacy tables without integer IDs.
+- `dictionary/queries.py` — stable read-only interface, reference browsing, tags, statistics and review queue.
+- `dictionary/query_search.py`, `query_detail.py`, `query_helpers.py` — search and ranking, entry serialization, and parameterized SQL for legacy tables without integer IDs.
+- `dictionary/validation.py` — pure, testable input rules; no Django or database access.
 - `dictionary/services.py` — validated mutations with `transaction.atomic(using='lexicon')` for each operation.
 - `dictionary/api.py` — HTTP verbs, request parsing, authorization and responses; no SQL hidden in views.
+- `docs/BACKEND.md` — detailed conventions, debugging and regression testing for changes.
 - `processing/` — offline enrichment and auditing, outside the web request process.
 
 Django's Group permissions are the authoritative authorization source. Anonymous browsing excludes hidden words; a user needs the Reviewer permission to see hidden words or enter Review Mode. Editors can mutate dictionary content but permission checks happen server-side.

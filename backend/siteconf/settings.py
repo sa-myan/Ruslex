@@ -66,3 +66,20 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_TZ = True
+
+# Safe, low-volume application logging to Docker's standard output.
+# Never log raw API bodies, credentials, CSRF tokens, or entry-note contents.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "concise": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "concise"},
+    },
+    "loggers": {
+        "dictionary": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "accounts": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+}
