@@ -9,6 +9,7 @@
   let editingId:number|null=null;
   let adding=false;
   let russian='';let english='';let pattern='';let error='';
+  $: visibleItems = items.filter(item => item.active || $editMode);
   function start(item?:Example|Pattern){
     editingId=item?.id ?? null;adding=true;error='';
     russian=item && 'russian' in item ? item.russian : '';
@@ -25,12 +26,13 @@
     catch(e){error=(e as Error).message;}
   }
 </script>
+{#if visibleItems.length || $editMode}
 <section class="mt-3"><div class="flex justify-between items-center mb-2"><h5 class="font-semibold text-sm capitalize">{kind}</h5>
   {#if $editMode}<button class="btn btn-xs btn-outline" on:click={()=>start()}>+ Add</button>{/if}</div>
   <div class="space-y-2">
-    {#each items.filter(i=>i.active || $editMode) as item (item.id)}
+    {#each visibleItems as item (item.id)}
       <div class:opacity-50={!item.active} class="pl-3 border-l-2 border-base-300 text-sm">
-        {#if 'russian' in item}<p class="russian">{item.russian}</p><p class="opacity-70">{item.english}</p>
+        {#if 'russian' in item}<p class="russian">{item.russian}</p>{#if item.english}<p class="opacity-70">{item.english}</p>{/if}
         {:else}<p class="russian">{item.pattern}</p>{/if}
         {#if $editMode}<div class="flex gap-1 mt-1"><button class="btn btn-ghost btn-xs" on:click={()=>start(item)}>Edit</button>
           <button class="btn btn-ghost btn-xs" on:click={()=>toggle(item)}>{item.active?'Archive':'Restore'}</button></div>{/if}
@@ -48,3 +50,4 @@
     </form>
   {/if}
 </section>
+{/if}

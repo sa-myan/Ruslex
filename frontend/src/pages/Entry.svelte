@@ -11,6 +11,7 @@
   let notes='';let newSense=false;let newMeaning='';let newDescription='';
   let newLink=false;let linkId:number|null=null;let label='';let url='';
   let newComponent=false;let selected:Summary|null=null;let compPosition=1;let compSurface='';let compNotes='';let compId:number|null=null;
+  $: visibleSenses = entry?.senses.filter(s => s.active || ($editMode && showArchived)) || [];
   onMount(()=>{refresh();request<Metadata>('/api/meta').then(x=>meta=x).catch(()=>{});});
   async function refresh(){busy=true;error='';try{entry=await request<EntryType>(`/api/lexemes/${wordId}`);
     notes=entry.notes;lemma=entry.lemma;pos=entry.pos;entryType=entry.entry_type;aspect=entry.aspect||'';animacy=entry.animacy||'';
@@ -79,6 +80,7 @@
       {/each}
     </section>
   {/if}
+  {#if visibleSenses.length || $editMode}
   <div class="flex justify-between items-center mb-3"><h3 class="text-xl font-semibold">Meanings</h3>
     {#if $editMode}<button class="btn btn-primary btn-sm" on:click={()=>newSense=!newSense}>+ Add meaning</button>{/if}</div>
   {#if newSense && $editMode}<form class="surface p-4 space-y-2 mb-4" on:submit|preventDefault={saveSense}>
@@ -87,11 +89,12 @@
     <button class="btn btn-primary btn-sm">Save meaning</button>
   </form>{/if}
   {#if $editMode}<label class="label text-sm mb-2 gap-2"><input class="checkbox checkbox-sm" type="checkbox" bind:checked={showArchived} />Show archived meanings</label>{/if}
-  {#each entry.senses.filter(s=>s.active || ($editMode && showArchived)) as sense (sense.id)}
+  {#each visibleSenses as sense (sense.id)}
     <SenseCard {entry} {sense} {refresh} />
   {/each}
+  {/if}
   <RelationList {entry} scope={null} {refresh} />
-  {#if entry.entry_type==='expression'}<section class="surface p-5 mt-5">
+  {#if entry.entry_type==='expression' && (entry.components.length || $editMode)}<section class="surface p-5 mt-5">
     <div class="panel-header"><h3 class="text-xl font-semibold">Constituent words</h3>
       {#if $editMode}<button class="btn btn-outline btn-sm" on:click={addComponent}>+ Add</button>{/if}</div>
     {#each entry.components as c}<div class="flex flex-wrap gap-3 py-2 border-b border-base-300">
@@ -126,11 +129,13 @@
       <button class="btn btn-primary btn-sm">Save link</button><button class="btn btn-sm ml-2" type="button" on:click={()=>newLink=false}>Cancel</button>
     </form>{/if}
   </section>
+  {#if entry.sources.length || entry.source_page_count}
   <section class="surface p-5 mt-5"><div class="panel-header"><h3 class="text-xl font-semibold">Textbook evidence</h3>
     <button class="btn btn-outline btn-sm" on:click={()=>navigate(`/word/${wordId}/references`)}>All references</button></div>
     {#each entry.sources as source}<div class="py-2 border-b border-base-300"><div class="text-xs opacity-60">{source.title} · PDF {source.pdf_page} · printed {source.printed_page} · {source.surface}</div>
       <p class="russian text-sm mt-1">{source.context}</p></div>{/each}
   </section>
+  {/if}
   {#if $editMode}<section class="surface p-5 mt-5"><h3 class="font-semibold mb-3">Private working notes</h3>
     <form on:submit|preventDefault={()=>doUpdate({notes})}><textarea class="textarea textarea-bordered w-full" rows="4" bind:value={notes}></textarea>
     <button class="btn btn-primary btn-sm mt-2">Save notes</button></form></section>{/if}

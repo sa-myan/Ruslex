@@ -24,8 +24,8 @@
       <button class="btn btn-xs btn-ghost" on:click={active}>{sense.active?'Archive':'Restore'}</button></div>{/if}
   </div>
   {#if sense.description}<p class="opacity-70 text-sm mb-3">{sense.description}</p>{/if}
-  <div class="flex gap-2 flex-wrap">{#each sense.tags as tag}<span class="badge badge-outline badge-sm">{tag.name}
-    {#if $editMode}<button class="ml-1" aria-label="Remove tag" on:click={()=>removeTag(tag.id)}>×</button>{/if}</span>{/each}</div>
+  {#if sense.tags.length}<div class="flex gap-2 flex-wrap">{#each sense.tags as tag}<span class="badge badge-outline badge-sm">{tag.name}
+    {#if $editMode}<button class="ml-1" aria-label="Remove tag" on:click={()=>removeTag(tag.id)}>×</button>{/if}</span>{/each}</div>{/if}
   {#if editing && $editMode}<form class="bg-base-200 p-3 rounded-lg mt-3 space-y-2" on:submit|preventDefault={save}>
     <label class="field"><span>Meaning (English)</span><textarea bind:value={meaning} required></textarea></label>
     <label class="field"><span>Description</span><textarea bind:value={description}></textarea></label>
@@ -35,8 +35,8 @@
     <input class="input input-bordered input-sm" placeholder="New tag" bind:value={tagName} required maxlength="48" />
     <select class="select select-bordered select-sm" bind:value={category}><option>semantic</option><option>grammatical</option><option>usage</option></select>
     <button class="btn btn-outline btn-sm">Add tag</button></form>{/if}
-  <RecordList wordId={entry.id} senseId={sense.id} kind="examples" items={sense.examples} {refresh} />
   <RecordList wordId={entry.id} senseId={sense.id} kind="patterns" items={sense.patterns} {refresh} />
+  <RecordList wordId={entry.id} senseId={sense.id} kind="examples" items={sense.examples} {refresh} />
   <RelationList {entry} scope={sense.id} {refresh}/>
   {#if error}<p class="text-error text-sm mt-2">{error}</p>{/if}
 </article>
