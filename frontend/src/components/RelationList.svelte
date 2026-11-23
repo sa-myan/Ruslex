@@ -4,7 +4,9 @@
   import EntryPicker from './EntryPicker.svelte';
   export let entry:Entry;
   export let scope:number|null=null;
-  export let refresh:()=>void;
+  export let refresh: () => Promise<boolean>;
+  export let onSaved: () => void;
+  export let onSaveStart: () => void;
   let show=false;let editId:number|null=null;let selected:Summary|null=null;
   let relationType='related';let ownSense:number|null=null;let otherSense:number|null=null;
   let otherSenses:Sense[]=[];let notes='';let error='';
@@ -21,14 +23,19 @@
     }else{selected=null;otherSenses=[];}
   }
   async function save(){
+    onSaveStart();
     if(!selected){error='Select a related entry';return;}
     error='';try{const url=`/api/lexemes/${entry.id}/relations${editId?`/${editId}`:''}`;
       await mutate(url,editId?'PUT':'POST',{target_lexeme_id:selected.id,relation_type:relationType,
-        source_sense_id:ownSense,target_sense_id:otherSense,notes});show=false;refresh();
+        source_sense_id:ownSense,target_sense_id:otherSense,notes});
+      if (await refresh()) { show=false; onSaved(); }
     }catch(e){error=(e as Error).message;}
   }
   async function remove(rel:Relation){if(!confirm(`Remove relationship to ${rel.other_lemma}?`))return;
-    try{await mutate(`/api/lexemes/${entry.id}/relations/${rel.id}`,'DELETE');refresh();}
+    onSaveStart();
+    error = '';
+    try{await mutate(`/api/lexemes/${entry.id}/relations/${rel.id}`,'DELETE');
+      if (await refresh()) onSaved();}
     catch(e){error=(e as Error).message;}}
 </script>
 {#if scoped.length || $editMode}

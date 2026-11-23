@@ -5,7 +5,9 @@
   export let senseId:number;
   export let kind:'examples'|'patterns';
   export let items:(Example|Pattern)[];
-  export let refresh:()=>void;
+  export let refresh: () => Promise<boolean>;
+  export let onSaved: () => void;
+  export let onSaveStart: () => void;
   let editingId:number|null=null;
   let adding=false;
   let russian='';let english='';let pattern='';let error='';
@@ -17,12 +19,17 @@
     pattern=item && 'pattern' in item ? item.pattern : '';
   }
   async function save(){
+    onSaveStart();
     error='';const url=`/api/lexemes/${wordId}/senses/${senseId}/${kind}${editingId?`/${editingId}`:''}`;
-    try{await mutate(url,editingId?'PUT':'POST',kind==='examples'?{russian,english}:{pattern});adding=false;refresh();}
+    try{await mutate(url,editingId?'PUT':'POST',kind==='examples'?{russian,english}:{pattern});
+      if (await refresh()) { adding=false; onSaved(); }}
     catch(e){error=(e as Error).message;}
   }
   async function toggle(item:Example|Pattern){
-    try{await mutate(`/api/lexemes/${wordId}/records/${kind}/${item.id}/active`,'PATCH',{active:!item.active});refresh();}
+    onSaveStart();
+    error = '';
+    try{await mutate(`/api/lexemes/${wordId}/records/${kind}/${item.id}/active`,'PATCH',{active:!item.active});
+      if (await refresh()) onSaved();}
     catch(e){error=(e as Error).message;}
   }
 </script>

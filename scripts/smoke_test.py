@@ -92,6 +92,23 @@ def main():
         check(client.patch('/api/lexemes/1',data=json.dumps({'human_status':'followup'}),content_type='application/json',**csrf(client)).status_code==200,'Reviewer can update review status')
         edit=Client(enforce_csrf_checks=True);edit.force_login(editor);edit.get('/api/auth/me')
         check(edit.patch('/api/lexemes/1',data=json.dumps({'notes':'smoke test'}),content_type='application/json',**csrf(edit)).status_code==200,'Editor can edit entry')
+        public_note=anon.get('/api/lexemes/1')
+        check(public_note.status_code==200 and public_note.json()['notes']=='smoke test',
+              'Entry notes are visible to anonymous readers')
+        with connections['lexicon'].cursor() as cur:
+            cur.execute("SELECT s.id FROM senses s WHERE s.lexeme_id=1 AND s.active=1 ORDER BY s.id LIMIT 1")
+            sense_id=cur.fetchone()[0]
+            cur.execute("""SELECT t.id,t.name,t.category FROM tags t
+                WHERE NOT EXISTS (SELECT 1 FROM sense_tags st WHERE st.sense_id=%s AND st.tag_id=t.id)
+                ORDER BY t.id LIMIT 1""", [sense_id])
+            tag_id, tag_name, tag_category=cur.fetchone()
+        tagged=edit.post(f'/api/lexemes/1/senses/{sense_id}/tags',
+            data=json.dumps({'name':tag_name,'category':tag_category}),
+            content_type='application/json',**csrf(edit))
+        check(tagged.status_code==201 and tagged.json()['id']==tag_id,
+              'Adding an existing tag reuses its dictionary ID')
+        check(any(tag['id']==tag_id for sense in anon.get('/api/lexemes/1').json()['senses']
+                  for tag in sense['tags']), 'Existing tag visible on the updated sense')
         SiteOptions.objects.filter(pk=1).update(registration_open=True)
         signup=anon.post('/api/auth/signup',data=json.dumps({'username':'guest1','email':'g@example.org','password':'StrongPassword!49'}),content_type='application/json',**csrf(anon))
         check(signup.status_code==201,'Admin-controlled registration switch')

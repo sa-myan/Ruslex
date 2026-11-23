@@ -219,7 +219,7 @@ def detail(word_id, *, private_notes=False):
         JOIN books b ON b.id=p.book_id WHERE lp.lexeme_id=%s ORDER BY RANDOM() LIMIT 10""", [word_id])
     totals = one("SELECT COUNT(*) n,COUNT(DISTINCT page_id) p FROM lexeme_pages WHERE lexeme_id=%s", [word_id])
     return {"id":w.id,"lemma":w.lemma,"pos":w.pos,"entry_type":w.entry_type,"aspect":w.aspect,
-        "animacy":w.animacy,"human_status":w.human_status,"notes":w.notes if private_notes else "",
+        "animacy":w.animacy,"human_status":w.human_status,"notes":w.notes,
         "created_at":w.created_at,"senses":view_senses,"external_links":links,"relations":relation_rows,
         "components":component_rows,"occurs_in":occurs_in,
         "sources":sources,"sources_total":totals["n"],"source_page_count":totals["p"]}

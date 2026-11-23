@@ -1,42 +1,149 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { request,mutate,navigate,editMode,reviewMode,user } from '../lib/api';
-  import type {Entry as EntryType,Metadata,Summary,Status} from '../lib/types';
+  import type {Entry as EntryType,Metadata,Summary,Status,Tag} from '../lib/types';
   import SenseCard from '../components/SenseCard.svelte';
   import RelationList from '../components/RelationList.svelte';
   import EntryPicker from '../components/EntryPicker.svelte';
   export let wordId:number;
-  let entry:EntryType|null=null;let meta:Metadata|null=null;let busy=true;let error='';let notice='';
+  let entry:EntryType|null=null;let meta:Metadata|null=null;let availableTags:Tag[]=[];let busy=true;let error='';let notice='';
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   let showArchived=false;let editIdentity=false;let lemma='';let pos='NOUN';let entryType='word';let aspect='';let animacy='';
   let notes='';let newSense=false;let newMeaning='';let newDescription='';
   let newLink=false;let linkId:number|null=null;let label='';let url='';
   let newComponent=false;let selected:Summary|null=null;let compPosition=1;let compSurface='';let compNotes='';let compId:number|null=null;
   $: visibleSenses = entry?.senses.filter(s => s.active || ($editMode && showArchived)) || [];
-  onMount(()=>{refresh();request<Metadata>('/api/meta').then(x=>meta=x).catch(()=>{});});
-  async function refresh(){busy=true;error='';try{entry=await request<EntryType>(`/api/lexemes/${wordId}`);
-    notes=entry.notes;lemma=entry.lemma;pos=entry.pos;entryType=entry.entry_type;aspect=entry.aspect||'';animacy=entry.animacy||'';
-  }catch(e){error=(e as Error).message;}finally{busy=false;}}
-  async function doUpdate(body:object){error='';try{await mutate(`/api/lexemes/${wordId}`,'PATCH',body);notice='Saved';await refresh();}
-    catch(e){error=(e as Error).message;}}
-  async function saveIdentity(){await doUpdate({lemma,pos,entry_type:entryType,aspect:aspect||null,animacy:animacy||null});editIdentity=false;}
-  async function saveSense(){try{await mutate(`/api/lexemes/${wordId}/senses`,'POST',{meaning:newMeaning,description:newDescription});newSense=false;newMeaning='';newDescription='';await refresh();}
-    catch(e){error=(e as Error).message;}}
-  async function saveLink(){try{await mutate(`/api/lexemes/${wordId}/external-links${linkId?`/${linkId}`:''}`,linkId?'PUT':'POST',{label,url});newLink=false;linkId=null;await refresh();}
-    catch(e){error=(e as Error).message;}}
-  function linkEdit(link:EntryType['external_links'][number]){linkId=link.id;label=link.label;url=link.url;newLink=true;}
-  async function deleteLink(id:number){if(!confirm('Remove this link?'))return;
-    try{await mutate(`/api/lexemes/${wordId}/external-links/${id}`,'DELETE');await refresh();}catch(e){error=(e as Error).message;}}
+  onMount(() => {
+    void refresh();
+    void request<Metadata>('/api/meta').then(data => meta = data).catch(() => {});
+    void reloadTags();
+  });
+
+  async function reloadTags(): Promise<void> {
+    try {
+      availableTags = await request<Tag[]>('/api/tags');
+    } catch (err) {
+      error = `Unable to load existing tags: ${(err as Error).message}`;
+    }
+  }
+
+  onDestroy(() => clearTimeout(noticeTimer));
+
+  function clearNotice() {
+    clearTimeout(noticeTimer);
+    notice = '';
+  }
+
+  function showSaved() {
+    clearNotice();
+    notice = 'Saved';
+    noticeTimer = setTimeout(() => notice = '', 3000);
+  }
+
+  async function refresh(): Promise<boolean> {
+    busy = true;
+    error = '';
+    try {
+      entry = await request<EntryType>(`/api/lexemes/${wordId}`);
+      notes = entry.notes;
+      lemma = entry.lemma;
+      pos = entry.pos;
+      entryType = entry.entry_type;
+      aspect = entry.aspect || '';
+      animacy = entry.animacy || '';
+      return true;
+    } catch (err) {
+      error = (err as Error).message;
+      return false;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function persist(action: () => Promise<unknown>): Promise<boolean> {
+    clearNotice();
+    error = '';
+    try {
+      await action();
+      if (!(await refresh())) return false;
+      showSaved();
+      return true;
+    } catch (err) {
+      error = (err as Error).message;
+      return false;
+    }
+  }
+
+  async function doUpdate(body: object): Promise<boolean> {
+    return persist(() => mutate(`/api/lexemes/${wordId}`, 'PATCH', body));
+  }
+
+  async function saveIdentity() {
+    const saved = await doUpdate({
+      lemma, pos, entry_type: entryType,
+      aspect: aspect || null, animacy: animacy || null
+    });
+    if (saved) editIdentity = false;
+  }
+
+  async function saveSense() {
+    const saved = await persist(() => mutate(`/api/lexemes/${wordId}/senses`, 'POST', {
+      meaning: newMeaning, description: newDescription
+    }));
+    if (saved) {
+      newSense = false;
+      newMeaning = '';
+      newDescription = '';
+    }
+  }
+
+  async function saveLink() {
+    const endpoint = `/api/lexemes/${wordId}/external-links${linkId ? `/${linkId}` : ''}`;
+    const saved = await persist(() => mutate(endpoint, linkId ? 'PUT' : 'POST', { label, url }));
+    if (saved) {
+      newLink = false;
+      linkId = null;
+    }
+  }
+
+  function linkEdit(link: EntryType['external_links'][number]) {
+    linkId = link.id;
+    label = link.label;
+    url = link.url;
+    newLink = true;
+  }
+
+  async function deleteLink(id: number) {
+    if (!confirm('Remove this link?')) return;
+    await persist(() => mutate(`/api/lexemes/${wordId}/external-links/${id}`, 'DELETE'));
+  }
+
   function addComponent(){newComponent=true;compId=null;selected=null;compSurface='';compNotes='';
     compPosition=Math.max(0,...(entry?.components.map(c=>c.position)||[]))+1;}
   function editComponent(c:EntryType['components'][number]){newComponent=true;compId=c.id;
     selected={id:c.word_id,lemma:c.word_lemma,pos:c.word_pos} as Summary;
     compPosition=c.position;compSurface=c.surface;compNotes=c.notes;}
-  async function saveComponent(){if(!selected){error='Choose a dictionary word';return;}
-    try{await mutate(`/api/lexemes/${wordId}/components${compId?`/${compId}`:''}`,compId?'PUT':'POST',
-      {word_id:selected.id,position:Number(compPosition),surface:compSurface,notes:compNotes});newComponent=false;await refresh();}
-    catch(e){error=(e as Error).message;}}
-  async function deleteComponent(id:number){if(!confirm('Remove constituent?'))return;
-    try{await mutate(`/api/lexemes/${wordId}/components/${id}`,'DELETE');await refresh();}catch(e){error=(e as Error).message;}}
+  async function saveComponent() {
+    if (!selected) {
+      error = 'Choose a dictionary word';
+      clearNotice();
+      return;
+    }
+    const endpoint = `/api/lexemes/${wordId}/components${compId ? `/${compId}` : ''}`;
+    const saved = await persist(() => mutate(endpoint, compId ? 'PUT' : 'POST', {
+      word_id: selected!.id,
+      position: Number(compPosition),
+      surface: compSurface,
+      notes: compNotes
+    }));
+    if (saved) newComponent = false;
+  }
+
+  async function deleteComponent(id: number) {
+    if (!confirm('Remove constituent?')) return;
+    await persist(() => mutate(`/api/lexemes/${wordId}/components/${id}`, 'DELETE'));
+  }
+
   function links(lemma:string){const q=encodeURIComponent(lemma);return [
     {label:'Gramota',url:`https://gramota.ru/poisk?mode=slovari&query=${q}`},
     {label:'OpenRussian',url:`https://en.openrussian.org/?search=${q}`},
@@ -46,7 +153,14 @@
 <button class="btn btn-ghost btn-sm mb-4" on:click={()=>navigate('/')}>← Dictionary</button>
 {#if busy && !entry}<div class="loading loading-spinner"></div>{/if}
 {#if error}<div class="alert alert-error mb-4">{error}</div>{/if}
-{#if notice}<div class="alert alert-success mb-4">{notice}<button class="btn btn-xs" on:click={()=>notice=''}>×</button></div>{/if}
+{#if notice}
+  <div class="toast toast-top toast-end z-50" aria-live="polite">
+    <div class="alert alert-success shadow-lg" role="status">
+      <span>{notice}</span>
+      <button class="btn btn-ghost btn-xs" aria-label="Dismiss notification" on:click={clearNotice}>×</button>
+    </div>
+  </div>
+{/if}
 {#if entry}
   <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
     <div><p class="kicker">{entry.entry_type==='expression'?'Expression':'Dictionary entry'}</p>
@@ -90,10 +204,10 @@
   </form>{/if}
   {#if $editMode}<label class="label text-sm mb-2 gap-2"><input class="checkbox checkbox-sm" type="checkbox" bind:checked={showArchived} />Show archived meanings</label>{/if}
   {#each visibleSenses as sense (sense.id)}
-    <SenseCard {entry} {sense} {refresh} />
+    <SenseCard {entry} {sense} {refresh} {availableTags} {reloadTags} onSaved={showSaved} onSaveStart={clearNotice} />
   {/each}
   {/if}
-  <RelationList {entry} scope={null} {refresh} />
+  <RelationList {entry} scope={null} {refresh} onSaved={showSaved} onSaveStart={clearNotice} />
   {#if entry.entry_type==='expression' && (entry.components.length || $editMode)}<section class="surface p-5 mt-5">
     <div class="panel-header"><h3 class="text-xl font-semibold">Constituent words</h3>
       {#if $editMode}<button class="btn btn-outline btn-sm" on:click={addComponent}>+ Add</button>{/if}</div>
@@ -136,7 +250,17 @@
       <p class="russian text-sm mt-1">{source.context}</p></div>{/each}
   </section>
   {/if}
-  {#if $editMode}<section class="surface p-5 mt-5"><h3 class="font-semibold mb-3">Private working notes</h3>
-    <form on:submit|preventDefault={()=>doUpdate({notes})}><textarea class="textarea textarea-bordered w-full" rows="4" bind:value={notes}></textarea>
-    <button class="btn btn-primary btn-sm mt-2">Save notes</button></form></section>{/if}
+  {#if entry.notes.trim() || $editMode}
+    <section class="surface p-5 mt-5">
+      <h3 class="font-semibold mb-3">Notes</h3>
+      {#if $editMode}
+        <form on:submit|preventDefault={() => doUpdate({notes})}>
+          <textarea class="textarea textarea-bordered w-full" aria-label="Entry notes" rows="4" bind:value={notes} maxlength="5000"></textarea>
+          <button class="btn btn-primary btn-sm mt-2">Save notes</button>
+        </form>
+      {:else}
+        <p class="whitespace-pre-wrap">{entry.notes}</p>
+      {/if}
+    </section>
+  {/if}
 {/if}
