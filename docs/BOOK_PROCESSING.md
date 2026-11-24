@@ -246,3 +246,20 @@ to an external AI provider unless you have the necessary rights.
 
 Remember: **importing OCR**, **resolving word forms**, **enriching vocabulary**,
 **promoting data**, and **editing on the website** are five distinct stages.
+
+## Optional OpenRussian headword reference (no AI and no promotion)
+
+The `./process.sh reference` command provides read-only OpenRussian
+headword lookup, optional forms, verb partners, and an audit for stress/ё
+candidates. It is independent of the Mistral OCR and enrichment pipelines.
+The reference file lives at `/srv/data/ruslex/reference/openrussian.db`;
+it is not the live dictionary. See [OPENRUSSIAN.md](OPENRUSSIAN.md).
+
+~~~sh
+./process.sh reference lookup 'читать' --forms
+./process.sh reference audit
+~~~
+
+Audit CSV rows are suggestions; this stage **does not** alter Ruslex lemmas,
+forms, senses, or stress. A reviewed stress storage and promotion model is
+still a separate future migration.

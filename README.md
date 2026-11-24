@@ -51,3 +51,10 @@ replace existing manual edits.
 build, Django integration run, Docker processing image build and a real model
 batch must still be verified on the VPS before treating a release or new-book
 import as operationally validated.
+
+### OpenRussian reference lookup
+
+With your own old OpenRussian SQLite dump mounted at
+`/srv/data/ruslex/reference/openrussian.db`, use
+`./process.sh reference lookup читать` or `./process.sh reference audit`.
+See `docs/OPENRUSSIAN.md`; this never modifies the live lexicon.
