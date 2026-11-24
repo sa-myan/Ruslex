@@ -261,5 +261,5 @@ it is not the live dictionary. See [OPENRUSSIAN.md](OPENRUSSIAN.md).
 ~~~
 
 Audit CSV rows are suggestions; this stage **does not** alter Ruslex lemmas,
-forms, senses, or stress. A reviewed stress storage and promotion model is
-still a separate future migration.
+forms, senses, or stress. Pronunciation storage is handled by a separate versioned migration and
+source-backed backfill. See [PRONUNCIATION.md](PRONUNCIATION.md).
