@@ -22,6 +22,8 @@ urlpatterns = [
     path("api/auth/signup", accounts.sign_up),
     path("api/lexemes", dictionary.lexemes),
     path("api/lexemes/<int:word_id>", dictionary.lexeme),
+    path("api/lexemes/<int:word_id>/pronunciations", dictionary.pronunciation_records),
+    path("api/lexemes/<int:word_id>/pronunciations/<int:record_id>", dictionary.pronunciation_records),
     path("api/lexemes/<int:word_id>/relations", dictionary.relations),
     path("api/lexemes/<int:word_id>/relations/<int:record_id>", dictionary.relations),
     path("api/lexemes/<int:word_id>/external-links", dictionary.external_links),
