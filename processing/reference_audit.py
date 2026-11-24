@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .openrussian import (
-    ReferenceWord, candidate_words, lookup_key, plain_spelling, pos_code, word_rows,
+    ReferenceWord, candidate_words, lookup_key, plain_spelling, pos_code, match_capitalization, word_rows,
 )
 from .storage import atomic_json
 
@@ -39,8 +39,8 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
         spelling = plain_spelling(lexeme["lemma"])
         all_matches = reference_by_key[lookup_key(spelling)]
         candidates, pos_filtered = candidate_words(all_matches, lexeme["pos"])
-        stress_forms = sorted({w.stressed for w in candidates})
-        clean_forms = sorted({w.spelling for w in candidates})
+        stress_forms = sorted({match_capitalization(w.stressed, spelling) for w in candidates})
+        clean_forms = sorted({plain_spelling(value) for value in stress_forms})
         warnings = sorted({warning for w in candidates for warning in w.warnings})
         # Ё is audited independently of ambiguity and source warnings.
         yo_variants = {w.spelling.casefold() for w in all_matches}
