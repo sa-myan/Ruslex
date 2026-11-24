@@ -46,6 +46,24 @@ def lookup_key(text: str) -> str:
     return plain_spelling(text).casefold().replace("ё", "е")
 
 
+def match_capitalization(stressed: str, lemma: str) -> str:
+    """Retain Ruslex case while preserving OpenRussian stress and ё locations."""
+    source = plain_spelling(stressed)
+    target = plain_spelling(lemma)
+    if lookup_key(source) != lookup_key(target) or len(source) != len(target):
+        raise ValueError("Headword spellings are not letter-aligned")
+    result = []
+    index = 0
+    for char in stressed:
+        if char == ACUTE:
+            result.append(char)
+        else:
+            result.append(char.upper() if target[index].isupper() else char.lower()
+                          if char.isalpha() else char)
+            index += 1
+    return "".join(result)
+
+
 def normalize_accented(text: str) -> tuple[str, tuple[str, ...]]:
     """Convert OpenRussian apostrophe accents to combining U+0301.
 
