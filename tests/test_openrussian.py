@@ -13,6 +13,7 @@ from unittest.mock import patch
 from processing import cli
 from processing.openrussian import connect_reference, lookup, normalize_accented, result
 from processing.reference_audit import audit_entries, write_report
+from processing.pronunciations import initialize, backfill_plan, apply_backfill
 
 
 class OpenRussianTests(unittest.TestCase):
@@ -96,6 +97,48 @@ class OpenRussianTests(unittest.TestCase):
         summary = write_report(rows, self.root / "reports")
         self.assertEqual(summary["lexemes_checked"], 6)
         self.assertEqual(original, (self.reference.read_bytes(), self.lexicon.read_bytes()))
+
+    def test_hyphenated_headwords_and_pos_equivalences(self):
+        self.assertEqual(normalize_accented("кто'-нибудь"), ("кто\u0301-нибудь", ()))
+        from processing.openrussian import pos_code, candidate_words, ReferenceWord
+        reading = ReferenceWord("x", "читать", "чита'ть", "читать",
+                                "чита\u0301ть", "verb", "", "", ())
+        self.assertEqual(candidate_words([reading], "INFN")[0], [reading])
+        self.assertEqual(pos_code("adjective"), "ADJF")
+
+    def test_yo_flag_is_independent(self):
+        with connect_reference(self.reference) as ref, closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.row_factory = sqlite3.Row
+            rows = {r["lemma"]: r for r in audit_entries(ref, lex)}
+        self.assertEqual(rows["елка"]["status"], "yo_review")
+        self.assertEqual(rows["елка"]["yo_check"], "different_spelling")
+        self.assertFalse(rows["елка"]["safe_backfill"])
+        self.assertEqual(rows["все"]["yo_check"], "different_spelling")
+        self.assertFalse(rows["все"]["safe_backfill"])
+        self.assertTrue(rows["читать"]["safe_backfill"])
+
+    def test_schema_and_backfill_preserve_original_headwords(self):
+        backup_dir = self.root / "backups"
+        before = self.lexicon.read_bytes()
+        before_plan = backfill_plan(self.lexicon, self.reference)
+        self.assertFalse(before_plan["schema_installed"])
+        self.assertEqual(self.lexicon.read_bytes(), before)
+        result = initialize(self.lexicon, backup_dir)
+        self.assertTrue(result["changed"])
+        self.assertFalse(initialize(self.lexicon, backup_dir)["changed"])
+        self.assertGreaterEqual(backfill_plan(self.lexicon, self.reference)["safe_new_pronunciations"], 1)
+        outcome = apply_backfill(self.lexicon, self.reference, backup_dir)
+        self.assertEqual(outcome["inserted"], 1)
+        self.assertEqual(apply_backfill(self.lexicon, self.reference, backup_dir)["inserted"], 0)
+        with closing(sqlite3.connect(self.lexicon)) as db:
+            self.assertEqual(db.execute(
+                "SELECT stressed FROM lexeme_pronunciations"
+            ).fetchall(), [("чита\u0301ть",)])
+            self.assertEqual(db.execute(
+                "SELECT lemma FROM lexemes WHERE id=3"
+            ).fetchone()[0], "читать")
+            self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        self.assertTrue(list(backup_dir.glob("before-stress-*.db")))
 
     def test_cli_lookup(self):
         with patch.object(cli, "REFERENCE_DB", self.reference):
