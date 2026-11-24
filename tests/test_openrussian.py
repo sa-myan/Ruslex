@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from processing import cli
-from processing.openrussian import connect_reference, lookup, normalize_accented, result
+from processing.openrussian import connect_reference, lookup, normalize_accented, match_capitalization, result
 from processing.reference_audit import audit_entries, write_report
 from processing.pronunciations import initialize, backfill_plan, apply_backfill
 
@@ -97,6 +97,11 @@ class OpenRussianTests(unittest.TestCase):
         summary = write_report(rows, self.root / "reports")
         self.assertEqual(summary["lexemes_checked"], 6)
         self.assertEqual(original, (self.reference.read_bytes(), self.lexicon.read_bytes()))
+
+    def test_capitalization_is_preserved(self):
+        self.assertEqual(match_capitalization("москва\u0301", "Москва"), "Москва\u0301")
+        self.assertEqual(match_capitalization("ёлка", "Елка"), "Ёлка")
+        self.assertEqual(match_capitalization("сло\u0301во", "СЛОВО"), "СЛО\u0301ВО")
 
     def test_hyphenated_headwords_and_pos_equivalences(self):
         self.assertEqual(normalize_accented("кто'-нибудь"), ("кто\u0301-нибудь", ()))
