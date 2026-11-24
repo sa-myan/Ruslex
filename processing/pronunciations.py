@@ -16,6 +16,12 @@ from .storage import read_database, snapshot, write_database
 SCHEMA_VERSION = 1
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS pronunciation_schema_versions (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+INSERT OR IGNORE INTO pronunciation_schema_versions(version, applied_at)
+VALUES (1, datetime('now'));
 CREATE TABLE IF NOT EXISTS lexeme_pronunciations (
     id INTEGER PRIMARY KEY,
     lexeme_id INTEGER NOT NULL REFERENCES lexemes(id) ON DELETE CASCADE,
