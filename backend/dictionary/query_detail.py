@@ -12,6 +12,7 @@ from .models import (
     Example, ExpressionComponent, ExternalLink, Lexeme, Pattern, Relation, Sense,
 )
 from .query_helpers import LEXICON, legacy_rows, one, tags_for_senses
+from .pronunciation import pronunciations_for, display_lemma, sense_ids_for
 
 
 def _sense_rows(word_id: int) -> list[dict]:
@@ -195,6 +196,10 @@ def detail(word_id: int, *, private_notes: bool = False) -> dict:
 
     components, occurs_in = _component_rows(word_id, private_notes)
     sources, totals = _entry_source_sample(word_id)
+    readings = pronunciations_for([word_id]).get(word_id, [])
+    associations = sense_ids_for([r["id"] for r in readings])
+    for reading in readings:
+        reading["sense_ids"] = associations.get(reading["id"], [])
     links = list(
         ExternalLink.objects.using(LEXICON)
         .filter(lexeme_id=word_id)
@@ -204,6 +209,8 @@ def detail(word_id: int, *, private_notes: bool = False) -> dict:
     return {
         "id": entry.id,
         "lemma": entry.lemma,
+        "stressed_lemma": display_lemma(entry.lemma, readings),
+        "pronunciations": readings,
         "pos": entry.pos,
         "entry_type": entry.entry_type,
         "aspect": entry.aspect,
