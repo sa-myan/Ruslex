@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .storage import atomic_json, read_database, snapshot, write_database
+from .pronunciations import backfill_new_lexemes
 
 # Parent rows before children; SQLite FK checks remain ON during insertion.
 TABLE_ORDER = (
@@ -182,12 +183,18 @@ def promote(live: Path, workspace: Path, backups: Path, *, confirmed=False) -> d
                     placeholders = ", ".join("?" for _ in columns)
                     sql = f'INSERT INTO "{name}" ({quoted}) VALUES ({placeholders})'
                     production.executemany(sql, rows.values())
+                automatic_stress = backfill_new_lexemes(
+                    production, Path("/reference/openrussian.db"),
+                    {identity[0] for identity in changes["lexemes"][1]},
+                )
                 _integrity(production)
                 # write_database commits only after successful validation.
     except Exception:
         # Backups are retained; SQLite rolls back the entire transaction.
         raise
-    result = {**preview, "promoted": True, "pre_promotion_backup": str(backup_path),
+    result = {**preview, "promoted": True,
+              "automatically_added_headword_pronunciations": automatic_stress,
+              "pre_promotion_backup": str(backup_path),
               "completed_utc": datetime.now(timezone.utc).isoformat()}
     atomic_json(workspace / "promotion.json", result)
     return result
