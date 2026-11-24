@@ -23,6 +23,7 @@ services:
     volumes:
       - "${DATA_ROOT}/processing:/work"
       - "${DATA_ROOT}/ocr:/ocr:ro"
+      - "${DATA_ROOT}/reference:/reference:ro"
       - "${DATA_ROOT}/lexicon:/live:ro"
       - "${DATA_ROOT}/backups:/backups:ro"
       - "${DATA_ROOT}/processing/state:/state"

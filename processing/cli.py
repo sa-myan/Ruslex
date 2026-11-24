@@ -15,15 +15,18 @@ from pathlib import Path
 from .audit import connect_read_only, make_audit
 from .enrichment_merge import apply_enrichment
 from .forms import resolve, review_batch, apply_decisions
+from .openrussian import connect_reference, lookup, result as reference_result, verify_schema, reference_fingerprint
+from .reference_audit import audit_entries, write_report, suggested_report_path
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan, promote, workspace_paths
-from .storage import inventory, prepare, read_database, write_database
+from .storage import atomic_json, inventory, prepare, read_database, write_database
 from .workflow import report, run
 
 LIVE_DB = Path("/live/lexicon.db")
 WORK_ROOT = Path("/work")
 OCR_ROOT = Path("/ocr")
 BACKUP_ROOT = Path("/backups")
+REFERENCE_DB = Path("/reference/openrussian.db")
 
 
 def workspace_dir(name: str) -> Path:
@@ -41,6 +44,13 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("inventory", help="Read-only statistics on the live dictionary")
+    reference = commands.add_parser("reference", help="Explore the read-only OpenRussian database")
+    reference_commands = reference.add_subparsers(dest="reference_command", required=True)
+    reference_commands.add_parser("info", help="Inspect source schema and record counts")
+    ref_lookup = reference_commands.add_parser("lookup", help="Find headword readings and translations")
+    ref_lookup.add_argument("lemma", help="One Russian dictionary headword")
+    ref_lookup.add_argument("--forms", action="store_true", help="Include inflected forms as reference data")
+    reference_commands.add_parser("audit", help="Export stress/ё candidates for Ruslex lexemes")
     audit_cmd = commands.add_parser("audit", help="Read-only audit of live or staged dictionary")
     audit_cmd.add_argument("--workspace", help="Optional candidate workspace name")
     audit_cmd.add_argument("--sample-size", type=int, default=150)
@@ -108,7 +118,39 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
-        if args.command == "inventory":
+        if args.command == "reference":
+            with connect_reference(REFERENCE_DB) as dictionary:
+                if args.reference_command == "info":
+                    enabled = verify_schema(dictionary)
+                    result = {
+                        "reference_file": str(REFERENCE_DB),
+                        "headwords": dictionary.execute("SELECT COUNT(*) FROM words").fetchone()[0],
+                        "reference_sha256": reference_fingerprint(REFERENCE_DB),
+                        "available_tables": enabled,
+                        "optional_record_counts": {
+                            table: dictionary.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+                            for table, present in enabled.items() if present
+                        },
+                        "source": "OpenRussian (user-provided reference dump)",
+                        "data_mutation": "none",
+                    }
+                elif args.reference_command == "lookup":
+                    matches = lookup(dictionary, args.lemma)
+                    result = {
+                        "query": args.lemma,
+                        "matches": [reference_result(word, dictionary, include_forms=args.forms) for word in matches],
+                        "count": len(matches),
+                        "warning": "Reference readings are candidates, not verified Ruslex pronunciations.",
+                    }
+                elif args.reference_command == "audit":
+                    with read_database(LIVE_DB) as lexicon:
+                        rows = audit_entries(dictionary, lexicon)
+                    result = write_report(rows, suggested_report_path(WORK_ROOT))
+                    result["reference_sha256"] = reference_fingerprint(REFERENCE_DB)
+                    atomic_json(Path(result["csv"]).parent / "summary.json", result)
+                else:
+                    parser.error("Unknown reference subcommand")
+        elif args.command == "inventory":
             result = inventory(LIVE_DB)
         elif args.command == "audit":
             if not 0 <= args.sample_size <= 1000:

@@ -176,3 +176,10 @@ entirely on the VPS.
 
 Next: [DEPLOYMENT.md](DEPLOYMENT.md), [BOOK_PROCESSING.md](BOOK_PROCESSING.md),
 [OPERATIONS.md](OPERATIONS.md).
+
+### Optional OpenRussian reference data
+
+`/srv/data/ruslex/reference/` contains separately sourced, read-only
+reference datasets such as `openrussian.db`. The **processing worker** mounts
+this folder at `/reference`; Caddy, the website, and the network-disabled
+promoter have no need to access it. See `docs/OPENRUSSIAN.md`.

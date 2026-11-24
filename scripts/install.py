@@ -52,7 +52,7 @@ def initialize(*, root: Path, source: Path | None, hostname: str, dry_run: bool)
     if dry_run:
         return result
     for folder in (root, root / "lexicon", root / "admin", root / "backups",
-                   root / "processing", root / "processing" / "state", root / "ocr", root / "releases"):
+                   root / "processing", root / "processing" / "state", root / "ocr", root / "reference", root / "releases"):
         folder.mkdir(parents=True, exist_ok=True)
         # OpenCode credentials belong to the non-root processing worker.
         # `process.sh` performs the bind-mount owner fix before first use.
