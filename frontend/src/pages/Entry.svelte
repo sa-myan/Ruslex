@@ -7,6 +7,7 @@
   import type { Entry as DictionaryEntry, Metadata, Status, Tag } from '../lib/types';
 
   import EntryIdentityForm from '../components/entry/EntryIdentityForm.svelte';
+  import PronunciationEditor from '../components/entry/PronunciationEditor.svelte';
   import ExpressionComponents from '../components/entry/ExpressionComponents.svelte';
   import ExternalLinks from '../components/entry/ExternalLinks.svelte';
   import SenseCard from '../components/SenseCard.svelte';
@@ -164,6 +165,10 @@
       {/if}
     </div>
   </div>
+
+  {#if $editMode && entry.entry_type === 'word'}
+    <PronunciationEditor {entry} {refresh} />
+  {/if}
 
   {#if isEditingIdentity && $editMode}
     <EntryIdentityForm
