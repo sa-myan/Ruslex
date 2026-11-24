@@ -9,6 +9,7 @@ import re
 
 from .catalog import PARTS_OF_SPEECH, STATUSES
 from .models import Lexeme, Sense
+from .pronunciation import pronunciations_for, display_lemma
 from .query_helpers import (
     LEXICON, _page_counts, _sql_placeholders, legacy_rows, paginate,
     tags_for_senses,
@@ -38,6 +39,7 @@ def summaries(words: list, matching: dict | None = None) -> list[dict]:
 
     tags_by_sense = tags_for_senses(sense_ids)
     counts = _page_counts(word_ids)
+    readings = pronunciations_for(word_ids)
     results = []
 
     for entry in words:
@@ -58,6 +60,7 @@ def summaries(words: list, matching: dict | None = None) -> list[dict]:
             {
                 "id": entry.id,
                 "lemma": entry.lemma,
+                "stressed_lemma": display_lemma(entry.lemma, readings.get(entry.id, [])),
                 "pos": entry.pos,
                 "entry_type": entry.entry_type,
                 "aspect": entry.aspect,
