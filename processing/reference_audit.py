@@ -13,13 +13,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .openrussian import (
-    ReferenceWord, candidate_words, lookup_key, plain_spelling, word_rows,
+    ReferenceWord, candidate_words, lookup_key, plain_spelling, pos_code, word_rows,
 )
 from .storage import atomic_json
 
 FIELDS = (
     "lexeme_id", "lemma", "pos", "status", "proposed_spelling",
     "stress_candidates", "reference_ids", "reference_types", "reasons",
+    "yo_check", "safe_backfill",
 )
 
 
@@ -41,6 +42,11 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
         stress_forms = sorted({w.stressed for w in candidates})
         clean_forms = sorted({w.spelling for w in candidates})
         warnings = sorted({warning for w in candidates for warning in w.warnings})
+        # Ё is audited independently of ambiguity and source warnings.
+        yo_variants = {w.spelling.casefold() for w in all_matches}
+        yo_check = "different_spelling" if any(
+            value != spelling.casefold() for value in yo_variants
+        ) else "same_spelling" if any("ё" in value for value in yo_variants) else "none"
         reasons = list(warnings)
 
         if not candidates:
@@ -61,6 +67,15 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
         if len(candidates) > 1 and len(stress_forms) == 1:
             reasons.append("multiple reference entries share a reading")
 
+        # A deterministic backfill must have an unambiguous validated reading,
+        # matching ё spelling, and known matching reference POS.
+        compatible_pos = bool(candidates) and all(
+            pos_code(w.word_type) == {"INFN": "VERB", "ADJS": "ADJF", "COMP": "ADJF"}.get(lexeme["pos"], lexeme["pos"])
+            for w in candidates
+        )
+        safe_backfill = (status == "candidate" and yo_check != "different_spelling"
+                         and compatible_pos and bool(stress_forms))
+
         rows.append({
             "lexeme_id": lexeme["id"], "lemma": lexeme["lemma"],
             "pos": lexeme["pos"], "status": status,
@@ -69,6 +84,8 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
             "reference_ids": ",".join(w.word_id for w in candidates),
             "reference_types": " | ".join(sorted({w.word_type for w in candidates})),
             "reasons": "; ".join(reasons),
+            "yo_check": yo_check,
+            "safe_backfill": safe_backfill,
         })
     return rows
 
