@@ -45,7 +45,10 @@ def pronunciations_for(word_ids: list[int]) -> dict[int, list[dict]]:
 
 
 def display_lemma(lemma: str, rows: list[dict]) -> str:
-    primary = [row for row in rows if row["is_primary"] and row["verification"] != "disputed"]
+    expected = lemma.replace(ACUTE, "").casefold().replace("ё", "е")
+    primary = [row for row in rows if row["is_primary"]
+               and row["verification"] != "disputed"
+               and row["stressed"].replace(ACUTE, "").casefold().replace("ё", "е") == expected]
     return primary[0]["stressed"] if len(primary) == 1 else lemma
 
 
