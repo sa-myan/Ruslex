@@ -156,3 +156,37 @@ def apply_backfill(live: Path, reference: Path, backups: Path) -> dict:
             count += 1
         _check(db)
     return {**preview, "inserted": count, "backup": str(backup)}
+
+
+def backfill_new_lexemes(db: sqlite3.Connection, reference: Path,
+                         lexeme_ids: set[int]) -> int:
+    """Populate safe readings for newly promoted words in the same transaction.
+
+    If the optional reference is absent, book promotion remains usable.
+    A present but malformed reference must fail loudly, never guess.
+    """
+    if not lexeme_ids or not installed(db) or not reference.is_file():
+        return 0
+    with connect_reference(reference) as ref:
+        rows = audit_entries(ref, db)
+        fingerprint = reference_fingerprint(reference)
+    stamp = datetime.now(timezone.utc).isoformat()
+    inserted = 0
+    for row in rows:
+        if row["lexeme_id"] not in lexeme_ids or not row["safe_backfill"]:
+            continue
+        if db.execute(
+            "SELECT 1 FROM lexeme_pronunciations WHERE lexeme_id=?",
+            (row["lexeme_id"],)
+        ).fetchone():
+            continue
+        db.execute(
+            """INSERT INTO lexeme_pronunciations
+               (lexeme_id, stressed, source, reference_id, reference_fingerprint,
+                verification, is_primary, created_at)
+               VALUES (?, ?, 'openrussian', ?, ?, 'source_backed', 1, ?)""",
+            (row["lexeme_id"], row["stress_candidates"],
+             row["reference_ids"].split(",")[0], fingerprint, stamp),
+        )
+        inserted += 1
+    return inserted
