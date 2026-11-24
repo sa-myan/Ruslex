@@ -63,7 +63,7 @@ export interface Summary {
 }
 
 /** Enough information to select an entry without inventing a full Summary object. */
-export type EntryReference = Pick<Summary, 'id' | 'lemma' | 'pos'>;
+export type EntryReference = Pick<Summary, 'id' | 'lemma' | 'pos'> & Partial<Pick<Summary, 'stressed_lemma'>>;
 
 export interface Example {
   id: number;
