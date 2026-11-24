@@ -51,6 +51,7 @@ export interface Page<T> {
 export interface Summary {
   id: number;
   lemma: string;
+  stressed_lemma?: string;
   pos: string;
   entry_type: string;
   aspect: string | null;
@@ -137,7 +138,18 @@ export interface Source {
   count?: number;
 }
 
+export interface Pronunciation {
+  id: number;
+  lexeme_id: number;
+  stressed: string;
+  source: string;
+  verification: 'source_backed' | 'verified' | 'disputed';
+  is_primary: boolean;
+  sense_ids: number[];
+}
+
 export interface Entry extends Summary {
+  pronunciations: Pronunciation[];
   notes: string;
   created_at: string;
   senses: Sense[];
