@@ -87,7 +87,7 @@ def initialize(live: Path, backups: Path) -> dict:
     backup = _backup(live, backups, "schema")
     # executescript commits implicitly, so use explicit BEGIN/COMMIT in one script.
     with write_database(live) as db:
-        db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nCOMMIT;")
+        db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA)
         _check(db)
     return {"installed": True, "changed": True, "backup": str(backup),
             "schema_version": SCHEMA_VERSION}
