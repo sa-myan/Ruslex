@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from processing.forms import apply_decisions, review_batch
+from processing.book_status import status as book_status
 from processing.ocr import import_book, input_pages, inspect, tokenize
 from processing.promotion import create_workspace, plan, promote
 from processing.storage import write_database
@@ -46,6 +47,17 @@ class ProcessingTest(unittest.TestCase):
         with write_database(self.workspace / "candidate.db") as db:
             return import_book(db, title="Book Two", edition="2026", source=self.ocr,
                                first=1, last=1, analyzer=FakeMorph())
+
+    def test_book_status_summarizes_pending_forms_without_writing(self):
+        self.import_page()
+        candidate = self.workspace / "candidate.db"
+        before = candidate.read_bytes()
+        result = book_status(self.workspace, "Book Two")
+        self.assertEqual(result["pages_imported"], 1)
+        self.assertGreater(result["pending_forms"], 0)
+        self.assertFalse(result["ready_to_plan"])
+        self.assertEqual(result["data_mutation"], "none")
+        self.assertEqual(before, candidate.read_bytes())
 
     def test_ocr_and_append_only_promotion_preserve_manual_editing(self):
         result = self.import_page()
