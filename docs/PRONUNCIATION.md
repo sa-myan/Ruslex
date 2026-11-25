@@ -179,3 +179,31 @@ that still lack pronunciation records. Run `./process.sh stress plan` and
 `reference_consensus` readings before executing the production backfill.
 The existing 1,147 source-backed entries will not be rewritten, even if a
 word has subsequently been hidden.
+
+## Remaining pronunciation-review evidence
+
+Once automatic backfill reaches zero eligible candidates, run:
+
+~~~sh
+./process.sh stress diagnose
+~~~
+
+Each unresolved entry now includes its **lexeme ID**, its Ruslex meanings,
+and `reading_options` grouped by the actual stressed OpenRussian headword.
+Each option keeps only its own source IDs, original source POS labels, English
+glosses, and source warnings. This is essential for homographs such as
+`пи́сать` versus `писа́ть`: combined source glosses are not evidence
+that every gloss belongs to every reading.
+
+All active words without references appear in the full `missing_examples`
+array and in `all_cases` of the JSON report, rather than being truncated
+to 12 examples. `hidden` entries remain excluded throughout.
+
+The diagnostic is read-only. It does **not** automatically assign
+meanings to readings, correct ё, or resolve source variants. Apply any
+confirmed readings through the existing authenticated entry editor. Do not
+guess readings for source warnings or unsupported reference entries.
+
+`stress backfill --confirm` reports
+`data_mutation: "pronunciations_inserted"` when rows were inserted; a
+read-only plan and an idempotent no-op backfill report `"none"`.

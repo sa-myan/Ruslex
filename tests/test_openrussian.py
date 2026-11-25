@@ -202,6 +202,35 @@ class OpenRussianTests(unittest.TestCase):
         self.assertEqual(report["data_mutation"], "none")
         self.assertEqual(original, (self.lexicon.read_bytes(), self.reference.read_bytes()))
 
+    def test_readings_have_separate_source_meanings(self):
+        # Use two identical-looking Russian spellings with different stresses,
+        # independently sourced glosses, and optional source POS metadata.
+        with closing(sqlite3.connect(self.reference)) as ref:
+            ref.executemany("INSERT INTO translations VALUES(?,?,?,?)", [
+                ("x", "en", "1", "castle"),
+                ("y", "en", "2", "lock"),
+            ])
+            ref.commit()
+        before = (self.lexicon.read_bytes(), self.reference.read_bytes())
+        report = diagnose(self.lexicon, self.reference, self.root / "work")
+        item = next(x for x in report["ambiguous"] if x["lemma"] == "замок")
+        options = {x["reading"]: x for x in item["reading_options"]}
+        self.assertEqual(options["за\u0301мок"]["reference_glosses"], ["castle"])
+        self.assertEqual(options["замо\u0301к"]["reference_glosses"], ["lock"])
+        self.assertEqual(options["за\u0301мок"]["reference_ids"], ["1"])
+        self.assertEqual(options["замо\u0301к"]["reference_ids"], ["2"])
+        self.assertEqual(item["lexeme_id"], 1)
+        self.assertEqual(before, (self.lexicon.read_bytes(), self.reference.read_bytes()))
+
+    def test_written_backfill_reports_mutation_truthfully(self):
+        initialize(self.lexicon, self.root / "backups")
+        result = apply_backfill(self.lexicon, self.reference, self.root / "backups")
+        self.assertEqual(result["inserted"], 1)
+        self.assertEqual(result["data_mutation"], "pronunciations_inserted")
+        second = apply_backfill(self.lexicon, self.reference, self.root / "backups")
+        self.assertEqual(second["inserted"], 0)
+        self.assertEqual(second["data_mutation"], "none")
+
     def test_hidden_is_logically_deleted_from_stress_processing(self):
         with closing(sqlite3.connect(self.lexicon)) as lex:
             lex.execute("UPDATE lexemes SET human_status='hidden' WHERE id IN (3, 6)")

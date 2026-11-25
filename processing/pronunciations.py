@@ -167,7 +167,8 @@ def apply_backfill(live: Path, reference: Path, backups: Path) -> dict:
             )
             count += 1
         _check(db)
-    return {**preview, "inserted": count, "backup": str(backup)}
+    return {**preview, "inserted": count, "backup": str(backup),
+            "data_mutation": "pronunciations_inserted" if count else "none"}
 
 
 def backfill_new_lexemes(db: sqlite3.Connection, reference: Path,
