@@ -13,6 +13,7 @@ from .models import (
 )
 from .query_helpers import LEXICON, legacy_rows, one, tags_for_senses
 from .pronunciation import pronunciations_for, display_lemma, sense_ids_for
+from .inflections import for_entry as inflected_forms
 
 
 def _sense_rows(word_id: int) -> list[dict]:
@@ -211,6 +212,7 @@ def detail(word_id: int, *, private_notes: bool = False) -> dict:
         "lemma": entry.lemma,
         "stressed_lemma": display_lemma(entry.lemma, readings),
         "pronunciations": readings,
+        "word_forms": inflected_forms(word_id) if entry.entry_type == "word" else [],
         "pos": entry.pos,
         "entry_type": entry.entry_type,
         "aspect": entry.aspect,
