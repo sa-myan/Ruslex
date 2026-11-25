@@ -56,6 +56,33 @@ def supports_abbreviations(db: sqlite3.Connection) -> bool:
     return "'abbreviation'" in ddl[0]
 
 
+def uppercase_in_running_text(markdown: str, uppercase: str) -> bool:
+    """Require an uppercase token in real prose, not in headings or tables.
+
+    Uppercase is *only* weak candidate evidence and never by itself qualifies
+    a new entry for automatic abbreviation classification.
+    """
+    token = re.compile(
+        r"(?<![А-Яа-яЁё])" + re.escape(uppercase) + r"(?![А-Яа-яЁё])"
+    )
+    for raw in markdown.splitlines():
+        line = raw.strip()
+        if (not line or line.startswith(("#", "|", chr(96), ">"))
+                or "|" in line):
+            continue
+        for match in token.finditer(line):
+            # A heading fragment may appear after other text on a badly
+            # formatted OCR line. Do not treat that as running prose.
+            before = line[:match.start()]
+            after = line[match.end():]
+            if "#" in before:
+                continue
+            surrounding = before[-70:] + " " + after[:70]
+            if re.search(r"[а-яё]{2,}", surrounding):
+                return True
+    return False
+
+
 def _candidates(db: sqlite3.Connection) -> list[dict]:
     cases = []
     for row in db.execute(
@@ -70,36 +97,34 @@ def _candidates(db: sqlite3.Connection) -> list[dict]:
         meanings = str(row["meanings"] or "")
         known = name in KNOWN_ABBREVIATIONS or name in DOTTED_ABBREVIATIONS
         definitional = bool(DEFINITION_CUE.search(meanings))
-        contexts = [
-            text[0] for text in db.execute(
-                """SELECT lp.context FROM lexeme_pages lp
-                   WHERE lp.lexeme_id=? ORDER BY lp.page_id LIMIT 25""",
+        uppercase_evidence = []
+        if not known and not definitional and 3 <= len(name) <= 9:
+            # Require separate textbook pages containing uppercase in prose:
+            # two mentions on a single heading/page are NOT two observations.
+            for source in db.execute(
+                """SELECT lp.page_id,lp.context,p.markdown
+                   FROM lexeme_pages lp
+                   JOIN pages p ON p.id=lp.page_id
+                   WHERE lp.lexeme_id=? ORDER BY lp.page_id LIMIT 100""",
                 (row["id"],),
-            )
-        ]
-        uppercase = name.upper()
-        uppercase_evidence = [
-            text[:190] for text in contexts
-            if 3 <= len(name) <= 9 and re.search(
-                r"(?<![А-Яа-яЁё])" + re.escape(uppercase)
-                + r"(?![А-Яа-яЁё])", text
-            )
-        ]
-        repeated_caps = len(uppercase_evidence) >= 2
-        if known or definitional or repeated_caps:
+            ):
+                if uppercase_in_running_text(source["markdown"], name.upper()):
+                    uppercase_evidence.append(source["context"][:190])
+                if len(uppercase_evidence) >= 2:
+                    break
+        if known or definitional or len(uppercase_evidence) >= 2:
             cases.append({
                 "id": row["id"], "lemma": row["lemma"], "pos": row["pos"],
                 "meanings": meanings[:260],
                 "reason": (
                     "known_abbreviation" if known else
                     "meaning_suggests_abbreviation" if definitional else
-                    "repeated_uppercase_in_textbook"
+                    "uppercase_in_prose_on_multiple_pages"
                 ),
                 "automatic": known,
                 "contexts": uppercase_evidence[:2],
             })
     return cases
-
 
 def plan(live: Path) -> dict:
     with read_database(live) as db:
