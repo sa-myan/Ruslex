@@ -288,18 +288,26 @@ def plan(live: Path, reference: Path, work_root: Path, name: str) -> dict:
     if manifest["reference_sha256"] != fingerprint or manifest["case_hash"] != _hash(cases):
         raise RuntimeError("AI input is stale: a live sense, lexeme or reference changed")
     results = _completed(root, cases)
-    return {"run": name, "total_cases": len(cases), "completed": len(results),
+    by_id = {case["id"]: case for case in cases}
+    return {"run": name, "book": manifest.get("book"),
+            "total_cases": len(cases), "completed": len(results),
             "auto_eligible": sum(x["auto_eligible"] for x in results),
             "review_required": sum(not x["auto_eligible"] for x in results),
             "remaining": len(cases)-len(results),
             "automatic_preview": [
-                {"id": x["id"], "lemma": next(c["lemma"] for c in cases if c["id"]==x["id"]),
-                 "reading": x["first"]["reading"]}
+                {"id": x["id"], "lemma": by_id[x["id"]]["lemma"],
+                 "senses": by_id[x["id"]]["senses"],
+                 "reading": x["first"]["reading"],
+                 "reference_id": x["first"]["reference_id"],
+                 "reason": x["first"]["reason"]}
                 for x in results if x["auto_eligible"]
             ],
             "review_preview": [
-                {"id": x["id"], "reading": x["first"]["reading"],
-                 "reason": x["review_reasons"]}
+                {"id": x["id"], "lemma": by_id[x["id"]]["lemma"],
+                 "senses": by_id[x["id"]]["senses"],
+                 "status": by_id[x["id"]]["status"],
+                 "first": x["first"], "second": x["second"],
+                 "review_reasons": x["review_reasons"]}
                 for x in results if not x["auto_eligible"]
             ],
             "data_mutation": "none"}
