@@ -61,6 +61,42 @@ class ProcessingTest(unittest.TestCase):
         self.assertEqual(result["data_mutation"], "none")
         self.assertEqual(before, candidate.read_bytes())
 
+    def test_book_run_advances_from_form_ai_to_enrichment_in_one_call(self):
+        workspace = self.root / "automatic"
+        page = self.root / "automatic.md"
+        page.write_text("Мама дома.", encoding="utf-8")
+        start_book(self.live, workspace, page, book="Auto Book", edition="",
+                   first=1, last=1, analyzer=FakeMorph())
+        with write_database(workspace / "candidate.db") as db:
+            batch = review_batch(db, "Auto Book", 20)
+        decisions = {"results": [
+            {"id": row["id"], "decision": "admit" if row["surface"] == "мама" else "exclude",
+             "confidence": "high", "reason": "attested context",
+             "entries": [{"lemma": "мама", "pos": "NOUN"}]
+             if row["surface"] == "мама" else []}
+            for row in batch
+        ]}
+        enrichment = {"entries": [{
+            "id": 2, "aspect": None, "animacy": None, "relations": [],
+            "senses": [{
+                "meaning": "mother", "description": "",
+                "tags": {"semantic": [], "grammatical": [], "usage": []},
+                "patterns": [],
+                "examples": [{"russian": "Мама дома.", "english": "Mother is home."}],
+            }],
+        }]}
+        with patch("processing.forms.opencode", return_value=decisions) as forms_ai:
+            with patch("processing.workflow.opencode", return_value=enrichment) as lexeme_ai:
+                result = advance_book(self.live, workspace, book="Auto Book",
+                                      model="provider/test", expressions=False)
+        self.assertEqual(result["stage"], "ready_for_promotion")
+        self.assertEqual(forms_ai.call_count, 1)
+        self.assertEqual(lexeme_ai.call_count, 1)
+        self.assertEqual(result["status"]["pending_forms"], 0)
+        self.assertEqual(result["enrichment"]["new_senses_on_entries"], 1)
+        with write_database(self.live) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM books").fetchone()[0], 0)
+
     def test_one_workspace_enriches_new_words_before_single_promotion(self):
         fresh = self.root / "single_pass"
         page = self.root / "one-page.md"
