@@ -14,6 +14,10 @@ from pathlib import Path
 
 from .audit import connect_read_only, make_audit
 from .book_status import status as book_status
+from .abbreviations import (
+    plan as abbreviation_plan, rehearse as abbreviation_rehearse,
+    initialize as abbreviation_init, categorize as abbreviation_categorize,
+)
 from .paradigms import (initialize as forms_initialize, plan as forms_plan,
                         backfill as forms_backfill, rehearse as forms_rehearse)
 from .enrichment_merge import apply_enrichment
@@ -79,6 +83,12 @@ def main(argv=None):
     for action in ("init", "backfill"):
         step = stress_actions.add_parser(action)
         step.add_argument("--confirm", action="store_true", required=True)
+    abbr = commands.add_parser("abbreviations", help="Classify lexical abbreviations")
+    abbr_actions = abbr.add_subparsers(dest="abbr_action", required=True)
+    abbr_actions.add_parser("plan", help="Show known candidates and uncertain definitions")
+    abbr_actions.add_parser("rehearse", help="Test the safe schema migration on a snapshot")
+    for action in ("init", "categorize"):
+        abbr_actions.add_parser(action).add_argument("--confirm", action="store_true", required=True)
     form_cmd = commands.add_parser("forms", help="Russian inflection paradigms")
     form_steps = form_cmd.add_subparsers(dest="forms_action", required=True)
     form_steps.add_parser("plan", help="Read-only headword form generation preview")
@@ -178,7 +188,16 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
-        if args.command == "forms":
+        if args.command == "abbreviations":
+            if args.abbr_action == "plan":
+                result = abbreviation_plan(LIVE_DB)
+            elif args.abbr_action == "rehearse":
+                result = abbreviation_rehearse(LIVE_DB, WORK_ROOT)
+            elif args.abbr_action == "init":
+                result = abbreviation_init(LIVE_DB, BACKUP_ROOT)
+            else:
+                result = abbreviation_categorize(LIVE_DB, BACKUP_ROOT)
+        elif args.command == "forms":
             if args.forms_action == "plan":
                 result = forms_plan(LIVE_DB)
             elif args.forms_action == "rehearse":
