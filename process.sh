@@ -90,6 +90,13 @@ case "$command" in
       *) echo "Use ./process.sh stress {plan|diagnose|rehearse|init|backfill|ai-run|ai-plan|ai-apply}" >&2; exit 2 ;;
     esac
     ;;
+  abbreviations)
+    case "${1:-}" in
+      init|categorize) compose run --rm --no-deps promoter python -m processing.cli abbreviations "$@" ;;
+      plan|rehearse) compose run --rm --no-deps rehearsal python -m processing.cli abbreviations "$@" ;;
+      *) echo "Use ./process.sh abbreviations {plan|rehearse|init|categorize}" >&2; exit 2 ;;
+    esac
+    ;;
   forms)
     case "${1:-}" in
       init|backfill) compose run --rm --no-deps promoter python -m processing.cli forms "$@" ;;
