@@ -187,28 +187,31 @@ def inspect(path: Path) -> dict:
     }
 
 
-def parse_forms(surface: str, analyzer) -> list[dict]:
+def parse_forms(surface: str, analyzer, *, uppercase_hint: bool = False) -> list[dict]:
     """Keep alternate analyses for AI disambiguation, not a single guess."""
     seen = set()
     result = []
     # Known lexical abbreviations are not always parseable by pymorphy.
     # Offer a classification option to the LLM, never infer from uppercase
     # textbook headings or unfamiliar OCR tokens alone.
-    if surface in KNOWN_ABBREVIATIONS:
+    if surface in KNOWN_ABBREVIATIONS or uppercase_hint:
         result.append({"lemma": surface, "pos": "NOUN",
-                       "known": True, "entry_type": "abbreviation"})
-        seen.add((surface, "NOUN"))
+                       "known": surface in KNOWN_ABBREVIATIONS,
+                       "entry_type": "abbreviation",
+                       "abbreviation_evidence": "recognized_lexical_abbreviation"
+                           if surface in KNOWN_ABBREVIATIONS else "uppercase_context_only"})
+        seen.add((surface, "NOUN", "abbreviation"))
     for analysis in analyzer.parse(surface):
         lemma = normalize(analysis.normal_form)
         raw_pos = str(analysis.tag.POS or "UNKNOWN")
         pos = POS_MAP.get(raw_pos, raw_pos)
-        if (lemma, pos) in seen:
+        category = "abbreviation" if lemma in KNOWN_ABBREVIATIONS else "word"
+        if (lemma, pos, category) in seen:
             continue
-        seen.add((lemma, pos))
+        seen.add((lemma, pos, category))
         result.append({"lemma": lemma, "pos": pos,
                        "known": bool(getattr(analysis, "is_known", False)),
-                       "entry_type": "abbreviation" if lemma in KNOWN_ABBREVIATIONS
-                       else "word"})
+                       "entry_type": category})
         if len(result) >= 7:
             break
     return result
@@ -246,8 +249,16 @@ def import_book(db, *, title: str, edition: str, source: Path,
         tokens = tokenize(markdown)
         frequencies = Counter(form for form, _ in tokens)
         contexts = {}
+        abbreviation_hints = set()
         for form, context in tokens:
             contexts.setdefault(form, context)
+            # Uppercase is a *candidate hint* only; the LLM still checks
+            # surrounding text and may decline admission.
+            if 2 <= len(form) <= 9 and re.search(
+                r"(?<![А-Яа-яЁё])" + re.escape(form.upper()) + r"(?![А-Яа-яЁё])",
+                context,
+            ):
+                abbreviation_hints.add(form)
         with db:
             page_id = db.execute(
                 "INSERT INTO pages(book_id,pdf_page,printed_page,markdown,source) VALUES(?,?,?,?,?)",
@@ -257,7 +268,9 @@ def import_book(db, *, title: str, edition: str, source: Path,
                 db.execute("INSERT INTO surface_pages(page_id,surface,count,context) VALUES(?,?,?,?)",
                            (page_id, form, count, contexts[form]))
                 if form not in parsed:
-                    parsed[form] = parse_forms(form, analyzer)
+                    parsed[form] = parse_forms(
+                        form, analyzer, uppercase_hint=form in abbreviation_hints
+                    )
                 result = db.execute(
                     "INSERT OR IGNORE INTO reviews(book_id,surface,analyses_json) VALUES(?,?,?)",
                     (book_id, form, json.dumps(parsed[form], ensure_ascii=False))
