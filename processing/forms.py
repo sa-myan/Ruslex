@@ -185,7 +185,8 @@ def resolve(db, *, workspace: Path, book: str, model: str,
                     db.execute("SELECT COUNT(*) FROM reviews WHERE status='pending' AND book_id "
                                "IN (SELECT id FROM books WHERE title=?)", (book,)).fetchone()[0]}
         prompt = FORM_PROMPT + json.dumps(batch, ensure_ascii=False)
-        progress.batch_start(number=completed + 1, first_id=batch[0]["id"],
+        progress.batch_start(number=min(progress.total_batches, progress.completed // batch_size + 1),
+                             first_id=batch[0]["id"],
                              last_id=batch[-1]["id"], count=len(batch))
         try:
             response = opencode(prompt, model, executable, timeout)
