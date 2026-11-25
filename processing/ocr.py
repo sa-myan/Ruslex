@@ -12,6 +12,8 @@ import zipfile
 from collections import Counter
 from pathlib import Path
 
+from .abbreviations import KNOWN_ABBREVIATIONS
+
 WORD = re.compile(r"(?<![\w])([А-Яа-яЁё](?:[А-Яа-яЁё\u0301\u0300]|[-‑](?=[А-Яа-яЁё]))*)(?![\w])")
 PAGE_MARKER = re.compile(r"(?im)^\s*<!--\s*page\s*:\s*(\d+)\s*-->\s*$")
 POS_MAP = {"INFN": "VERB", "GRND": "VERB", "ADJS": "ADJF", "PRTS": "PRTF"}
@@ -189,6 +191,13 @@ def parse_forms(surface: str, analyzer) -> list[dict]:
     """Keep alternate analyses for AI disambiguation, not a single guess."""
     seen = set()
     result = []
+    # Known lexical abbreviations are not always parseable by pymorphy.
+    # Offer a classification option to the LLM, never infer from uppercase
+    # textbook headings or unfamiliar OCR tokens alone.
+    if surface in KNOWN_ABBREVIATIONS:
+        result.append({"lemma": surface, "pos": "NOUN",
+                       "known": True, "entry_type": "abbreviation"})
+        seen.add((surface, "NOUN"))
     for analysis in analyzer.parse(surface):
         lemma = normalize(analysis.normal_form)
         raw_pos = str(analysis.tag.POS or "UNKNOWN")
@@ -197,7 +206,9 @@ def parse_forms(surface: str, analyzer) -> list[dict]:
             continue
         seen.add((lemma, pos))
         result.append({"lemma": lemma, "pos": pos,
-                       "known": bool(getattr(analysis, "is_known", False))})
+                       "known": bool(getattr(analysis, "is_known", False)),
+                       "entry_type": "abbreviation" if lemma in KNOWN_ABBREVIATIONS
+                       else "word"})
         if len(result) >= 7:
             break
     return result
@@ -255,7 +266,8 @@ def import_book(db, *, title: str, edition: str, source: Path,
                 review = db.execute("SELECT status,entries_json FROM reviews WHERE book_id=? AND surface=?",
                                     (book_id, form)).fetchone()
                 if review and review[0] == "admitted":
-                    for lemma, pos in json.loads(review[1]):
+                    for entry in json.loads(review[1]):
+                        lemma, pos = entry[:2]
                         lexeme = db.execute("SELECT id FROM lexemes WHERE lemma=? AND pos=?",
                                             (lemma, pos)).fetchone()
                         if lexeme:
