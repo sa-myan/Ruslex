@@ -25,7 +25,7 @@ from .forms import resolve, review_batch, apply_decisions
 from .openrussian import connect_reference, lookup, result as reference_result, verify_schema, reference_fingerprint
 from .reference_audit import audit_entries, write_report, suggested_report_path
 from .stress_diagnostics import diagnose as diagnose_stress
-from .stress_ai import analyze as stress_ai_analyze, plan as stress_ai_plan, apply as stress_ai_apply
+from .stress_ai import analyze as stress_ai_analyze, plan as stress_ai_plan, apply as stress_ai_apply, parse_approval_ids
 from .pronunciations import initialize as stress_initialize, backfill_plan as stress_plan, apply_backfill as stress_apply, rehearse as stress_rehearse
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan, promote, workspace_paths
@@ -80,6 +80,7 @@ def main(argv=None):
     ai_apply = stress_actions.add_parser("ai-apply", help="Apply only doubly-verified choices, after backup")
     ai_apply.add_argument("name")
     ai_apply.add_argument("--confirm", action="store_true", required=True)
+    ai_apply.add_argument("--approve", help="Comma-separated lexeme IDs explicitly approved by a human")
     for action in ("init", "backfill"):
         step = stress_actions.add_parser(action)
         step.add_argument("--confirm", action="store_true", required=True)
@@ -222,7 +223,7 @@ def main(argv=None):
                 result = stress_ai_plan(LIVE_DB, REFERENCE_DB, WORK_ROOT, args.name)
             elif args.stress_action == "ai-apply":
                 result = stress_ai_apply(LIVE_DB, REFERENCE_DB, WORK_ROOT,
-                                         BACKUP_ROOT, args.name)
+                                         BACKUP_ROOT, args.name, approved_ids=parse_approval_ids(args.approve))
             elif args.stress_action == "rehearse":
                 result = stress_rehearse(LIVE_DB, REFERENCE_DB, WORK_ROOT)
             elif args.stress_action == "init":
