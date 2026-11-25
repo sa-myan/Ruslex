@@ -23,6 +23,10 @@ KNOWN_ABBREVIATIONS = frozenset("""
 тв жкх нпп аэс гэс тэс тэц вуз загс нии пту спб эгэ огэ
 снг рсфср рнк ввэр мкс сэс жк пво пдд
 """.split())
+# These lexicalized abbreviations decline regularly. Initialisms such as
+# МГУ or США must NOT be given invented inflection tables.
+INFLECTING_ABBREVIATIONS = frozenset({"вуз", "загс"})
+
 DEFINITION_CUE = re.compile(
     r"\b(?:abbreviation|abbreviated|acronym|initialism|"
     r"stands for|short for|shortened form|abbrev\.)\b", re.IGNORECASE,
