@@ -16,6 +16,9 @@ from .abbreviations import KNOWN_ABBREVIATIONS, DOTTED_ABBREVIATIONS
 
 WORD = re.compile(r"(?<![\w])([А-Яа-яЁё](?:[А-Яа-яЁё\u0301\u0300]|[-‑](?=[А-Яа-яЁё]))*)(?![\w])")
 PAGE_MARKER = re.compile(r"(?im)^\s*<!--\s*page\s*:\s*(\d+)\s*-->\s*$")
+NUMBERED_ACRONYM = re.compile(
+    r"(?<![\\w])([А-ЯЁ]{2,9}-[0-9]{1,5})(?![\\w])"
+)
 DOTTED_MATCH = re.compile(
     r"(?<![А-Яа-яЁё])(?:т\.\s*д\.|т\.\s*е\.|т\.\s*к\.|г\.|ул\.|стр\.|рис\.|им\.)(?![А-Яа-яЁё])",
     re.IGNORECASE,
@@ -41,6 +44,10 @@ def tokenize(markdown: str) -> list[tuple[str, str]]:
             context = " ".join(clean[max(0, match.start() - 100):match.end() + 100].split())[:230]
             result.append((spelling, context))
             dotted_spans.append((match.start(), match.end()))
+    for match in NUMBERED_ACRONYM.finditer(clean):
+        context = " ".join(clean[max(0, match.start()-100):match.end()+100].split())[:230]
+        result.append((normalize(match.group(1)), context))
+        dotted_spans.append((match.start(), match.end()))
     for match in WORD.finditer(clean):
         if any(start <= match.start() < end for start, end in dotted_spans):
             continue
@@ -211,7 +218,9 @@ def parse_forms(surface: str, analyzer, *, uppercase_hint: bool = False) -> list
         return [{"lemma": surface, "pos": "OTHER", "known": True,
                  "entry_type": "abbreviation",
                  "abbreviation_evidence": "known_written_abbreviation"}]
-    if surface in KNOWN_ABBREVIATIONS or uppercase_hint:
+    if surface in KNOWN_ABBREVIATIONS or uppercase_hint or (
+        NUMBERED_ACRONYM.fullmatch(surface.upper()) is not None
+    ):
         result.append({"lemma": surface, "pos": "NOUN",
                        "known": surface in KNOWN_ABBREVIATIONS,
                        "entry_type": "abbreviation",
