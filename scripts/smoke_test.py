@@ -95,8 +95,33 @@ def check_public_search(anonymous, queries, connections) -> None:
     )
 
     fixtures = json.loads((PROJECT_ROOT / "tests" / "v3_search_fixtures.json").read_text())
-    if current_count != 1710:
-        print("SKIP original v3 search fixtures: installed dictionary count differs")
+    # The original fixtures represent an immutable v3 corpus snapshot, not
+    # merely every database that happens to contain 1,710 lexemes. Review
+    # status changes can alter visible counts without changing total lexemes.
+    # Keep search invariants on the current snapshot, and run historical
+    # ID/order parity only when the fixture's visible corpus still matches.
+    actual_visible = queries.search(QueryDict(""))
+    fixture_visible = fixtures[""]["total"]
+    check(
+        actual_visible["total"] == sum(
+            1 for row in queries.legacy_rows(
+                "SELECT human_status FROM lexemes"
+            ) if row["human_status"] != "hidden"
+        ),
+        "Default search matches current non-hidden dictionary records",
+    )
+    check(
+        [row["id"] for row in actual_visible["items"]]
+        == sorted(row["id"] for row in actual_visible["items"]),
+        "Unfiltered search retains lexeme-ID order",
+    )
+    if current_count != 1710 or actual_visible["total"] != fixture_visible:
+        print(
+            "SKIP historical v3 search ID fixtures: live corpus differs "
+            f"(lexemes={current_count}, visible={actual_visible['total']}; "
+            f"fixture lexemes=1710, visible={fixture_visible}). "
+            "Current-database invariants were checked."
+        )
         return
 
     for query, expected in fixtures.items():
