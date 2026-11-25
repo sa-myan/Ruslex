@@ -253,24 +253,36 @@ remaining unresolved pronunciations from that book**:
 The LLM sees each Ruslex meaning with stable sense IDs, short attested
 book contexts, and *separate* source glosses for every competing reading.
 Its output is strictly validated and saved in resumable batch files.
-Missing-reference suggestions stay **human review only**. Only
-independently agreeing high-confidence readings backed by the exact
-OpenRussian source and matching every recorded sense can be eligible for
-the guarded bulk application. Even then, there is no live write until
-you review the plan and explicitly run:
+Missing-reference suggestions stay **human-review only**. Only
+independently agreeing, high-confidence, source-backed homograph readings can
+qualify for automatic application. With one model, validated results are
+**actionable proposals**, not automatic approvals.
+
+For the current 43-case run, finish all batches *before* reclassifying `мгу`
+as an abbreviation: reclassification intentionally invalidates the old input
+manifest. Inspect the decisions using `ai-plan`. A human may approve
+individual IDs, including source-backed single-model decisions and
+well-supported AI stress suggestions (which are not labeled as source-backed).
+For example, after evaluating the complete preview:
 
 ```bash
+./process.sh stress ai-plan book2_stress
 ./manage.sh backup
-./process.sh stress ai-apply book2_stress --confirm
+./process.sh stress ai-apply book2_stress --confirm --approve 21,93
 ```
 
-This runs with no network, automatically takes another backup and
-rechecks the current live dictionary and source IDs. Existing
-pronunciation records are never replaced. Any different meanings,
-conflicting dictionary variants, missing references or uncertain
-model outputs remain in the review queue for the normal entry editor.
-If you only have one model, omit `--verify-model`; the output is
-still useful as an editable proposal, but **nothing can be auto-applied**.
+Only include IDs after checking their proposed pronunciation against reliable
+linguistic evidence. `--approve` is never inferred from model confidence.
+The promoter rejects arbitrary IDs and incomplete AI runs, revalidates each
+source ID, and rejects stale meanings or case lists. Explicitly approved
+unsupported-source suggestions are stored with `source=manual`, not
+`source=openrussian`. Omit `--approve` to apply only entries that meet
+the strict independent-model eligibility rule.
+
+This runs with no network, automatically creates another database backup and
+rechecks live evidence. Existing pronunciation records are never replaced.
+Different meanings, conflicting variants, unsupported sources and uncertain
+model outputs can remain in the review queue for the normal editor.
 
 This optional pass is a continuation of the book-processing workflow,
 not a replacement for the existing form and sense validation stages.
