@@ -12,10 +12,14 @@ import zipfile
 from collections import Counter
 from pathlib import Path
 
-from .abbreviations import KNOWN_ABBREVIATIONS
+from .abbreviations import KNOWN_ABBREVIATIONS, DOTTED_ABBREVIATIONS
 
 WORD = re.compile(r"(?<![\w])([А-Яа-яЁё](?:[А-Яа-яЁё\u0301\u0300]|[-‑](?=[А-Яа-яЁё]))*)(?![\w])")
 PAGE_MARKER = re.compile(r"(?im)^\s*<!--\s*page\s*:\s*(\d+)\s*-->\s*$")
+DOTTED_MATCH = re.compile(
+    r"(?<![А-Яа-яЁё])(?:т\.\s*д\.|т\.\s*е\.|т\.\s*к\.|г\.|ул\.|стр\.|рис\.|им\.)(?![А-Яа-яЁё])",
+    re.IGNORECASE,
+)
 POS_MAP = {"INFN": "VERB", "GRND": "VERB", "ADJS": "ADJF", "PRTS": "PRTF"}
 
 
@@ -30,7 +34,16 @@ def tokenize(markdown: str) -> list[tuple[str, str]]:
     clean = re.sub(r"\[([^]]+)\]\([^)]*\)", r"\1", clean)
     clean = re.sub(r"https?://\S+|<[^>]+>", " ", clean)
     result = []
+    dotted_spans = []
+    for match in DOTTED_MATCH.finditer(clean):
+        spelling = re.sub(r"\.\s*", ". ", match.group().casefold()).strip()
+        if spelling in DOTTED_ABBREVIATIONS:
+            context = " ".join(clean[max(0, match.start() - 100):match.end() + 100].split())[:230]
+            result.append((spelling, context))
+            dotted_spans.append((match.start(), match.end()))
     for match in WORD.finditer(clean):
+        if any(start <= match.start() < end for start, end in dotted_spans):
+            continue
         context = " ".join(clean[max(0, match.start() - 100):match.end() + 100].split())[:230]
         result.append((normalize(match.group(1)), context))
     return result
@@ -194,6 +207,10 @@ def parse_forms(surface: str, analyzer, *, uppercase_hint: bool = False) -> list
     # Known lexical abbreviations are not always parseable by pymorphy.
     # Offer a classification option to the LLM, never infer from uppercase
     # textbook headings or unfamiliar OCR tokens alone.
+    if surface in DOTTED_ABBREVIATIONS:
+        return [{"lemma": surface, "pos": "OTHER", "known": True,
+                 "entry_type": "abbreviation",
+                 "abbreviation_evidence": "known_written_abbreviation"}]
     if surface in KNOWN_ABBREVIATIONS or uppercase_hint:
         result.append({"lemma": surface, "pos": "NOUN",
                        "known": surface in KNOWN_ABBREVIATIONS,
