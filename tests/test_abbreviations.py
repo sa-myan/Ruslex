@@ -14,7 +14,7 @@ from processing.abbreviations import (
     initialize, categorize, plan, rehearse, supports_abbreviations,
 )
 from processing.forms import apply_decisions
-from processing.ocr import parse_forms, tokenize
+from processing.ocr import parse_forms, tokenize, import_book
 
 SCHEMA = Path(__file__).parent / "fixtures" / "empty_lexicon_schema.sql"
 
@@ -154,6 +154,45 @@ class AbbreviationTests(unittest.TestCase):
         self.assertTrue(any(option["entry_type"] == "abbreviation"
                             for option in parse_forms("юнфп", FakeMorph(),
                                                       uppercase_hint=True)))
+
+    def test_ocr_heading_does_not_mark_unknown_token_as_abbreviation(self):
+        """Do not add new abbreviation reviews for lesson-title capitalization."""
+        ocr_file = self.root / "heading.md"
+        ocr_file.write_text(
+            "# ЮНФП\\nТекст урока о предметах.\\n", encoding="utf-8"
+        )
+        with sqlite3.connect(self.live) as db:
+            db.row_factory = sqlite3.Row
+            import_book(db, title="Heading", edition="", source=ocr_file,
+                        first=1, last=1, analyzer=FakeMorph())
+            review = db.execute(
+                "SELECT analyses_json FROM reviews WHERE surface='юнфп' "
+                "AND book_id=(SELECT id FROM books WHERE title='Heading')"
+            ).fetchone()
+            self.assertIsNotNone(review)
+            import json
+            analyses = json.loads(review["analyses_json"])
+            self.assertFalse(any(x.get("entry_type") == "abbreviation"
+                                 for x in analyses))
+
+    def test_ocr_unknown_uppercase_in_running_prose_is_review_candidate(self):
+        ocr_file = self.root / "prose.md"
+        ocr_file.write_text(
+            "Мы используем ЮНФП для исследования процессов.",
+            encoding="utf-8"
+        )
+        with sqlite3.connect(self.live) as db:
+            db.row_factory = sqlite3.Row
+            import_book(db, title="Prose", edition="", source=ocr_file,
+                        first=1, last=1, analyzer=FakeMorph())
+            import json
+            review = db.execute(
+                "SELECT analyses_json FROM reviews WHERE surface='юнфп'"
+            ).fetchone()
+            self.assertIsNotNone(review)
+            analyses = json.loads(review["analyses_json"])
+            self.assertTrue(any(x.get("entry_type") == "abbreviation"
+                                for x in analyses))
 
     def test_ai_can_admit_abbreviation_without_changing_existing_entry(self):
         initialize(self.live, self.backups)
