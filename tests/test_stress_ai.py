@@ -41,6 +41,17 @@ class StressAITests(unittest.TestCase):
                 INSERT INTO senses VALUES(5,2,'pass',1);
                 INSERT INTO lexemes VALUES(3,'лекарство','NOUN','word','kept');
                 INSERT INTO senses VALUES(6,3,'medicine',1);
+                CREATE TABLE books(id INTEGER PRIMARY KEY,title TEXT,edition TEXT);
+                CREATE TABLE pages(id INTEGER PRIMARY KEY,book_id INTEGER);
+                CREATE TABLE lexeme_pages(
+                    lexeme_id INTEGER, page_id INTEGER, context TEXT,
+                    count INTEGER
+                );
+                INSERT INTO books VALUES(7,'Test Book','2026');
+                INSERT INTO pages VALUES(8,7);
+                INSERT INTO lexeme_pages VALUES(
+                    1,8,'Я хочу писать письмо своему старому другу.',2
+                );
             """)
         with sqlite3.connect(self.reference) as db:
             db.executescript("""
@@ -138,6 +149,19 @@ class StressAITests(unittest.TestCase):
                 "reading": "ле́карство", "reference_id": "40", "sense_ids": [6]}
         self.assertIn("overlapping_meanings_or_pronunciation_variants",
                       automatic_reasons(case, vote, vote))
+
+    def test_book_scope_only_sends_attested_unresolved_words(self):
+        cases, _ = evidence(self.live, self.reference, self.work,
+                            book="Test Book")
+        self.assertEqual([c["id"] for c in cases], [1])
+        self.assertTrue(cases[0]["contexts"])
+        with patch("processing.stress_ai.opencode") as model:
+            output = analyze(self.live, self.reference, self.work, name="book",
+                             book="Test Book", model="provider/model-a",
+                             dry_run=True)
+        model.assert_not_called()
+        self.assertEqual(output["cases"], 1)
+        self.assertEqual(output["next_batch"], [1])
 
     def test_evidence_excludes_hidden_entries(self):
         cases, _ = evidence(self.live, self.reference, self.work)
