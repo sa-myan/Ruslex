@@ -182,6 +182,36 @@ def validate(response: object, batch: list[dict]) -> list[dict]:
     return sorted(validated, key=lambda x: x["id"])
 
 
+def _ask_validated(prompt: str, *, model: str, batch: list[dict],
+                   executable: str, timeout: int, run_root: Path,
+                   first_id: int, last_id: int, phase: str) -> list[dict]:
+    """Retry a malformed AI batch twice, preserving rejected responses."""
+    current_prompt = prompt
+    for attempt in range(1, 4):
+        response = opencode(current_prompt, model, executable, timeout)
+        try:
+            return validate(response, batch)
+        except (ValueError, TypeError, KeyError) as exc:
+            atomic_json(
+                run_root / "rejected" / f"{first_id:06d}-{last_id:06d}-{phase}-{attempt}.json",
+                {"error": str(exc), "model": model, "response": response},
+            )
+            if attempt == 3:
+                raise ValueError(
+                    f"AI stress {phase} batch {first_id}-{last_id} failed "
+                    f"validation after three attempts: {exc}"
+                ) from exc
+            current_prompt = (
+                prompt + "\\n\\nVALIDATION REPAIR: The previous JSON was rejected: "
+                + str(exc)
+                + "\\nReturn the COMPLETE corrected JSON for exactly the same IDs, "
+                  "with all required fields. Do not add new headwords or sources."
+                + "\\nPREVIOUS RESPONSE:\\n"
+                + json.dumps(response, ensure_ascii=False)[:12000]
+            )
+    raise AssertionError("Unreachable")
+
+
 def _glosses(option: dict) -> set[str]:
     return {part.strip().casefold() for gloss in option["reference_glosses"]
             for part in re.split(r"[,;/]", gloss) if part.strip()}
@@ -267,9 +297,16 @@ def analyze(live: Path, reference: Path, work_root: Path, *, name: str,
         if dry_run:
             return {"dry_run": True, "cases": len(cases), "next_batch": ids,
                     "prompt_preview": prompt[:2200], "data_mutation": "none"}
-        first = validate(opencode(prompt, model, executable, timeout), batch)
-        second = (validate(opencode(prompt, verify_model, executable, timeout), batch)
-                  if verify_model else None)
+        first = _ask_validated(
+            prompt, model=model, batch=batch, executable=executable,
+            timeout=timeout, run_root=root, first_id=ids[0], last_id=ids[-1],
+            phase="primary",
+        )
+        second = (_ask_validated(
+            prompt, model=verify_model, batch=batch, executable=executable,
+            timeout=timeout, run_root=root, first_id=ids[0], last_id=ids[-1],
+            phase="verify",
+        ) if verify_model else None)
         atomic_json(target, {"input_ids": ids, "first": first, "second": second})
         completed += 1
     results = _completed(root, cases)
