@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .pronunciations import _backup, _check
+from .abbreviations import INFLECTING_ABBREVIATIONS
 from .storage import read_database, snapshot, write_database
 
 WORD = re.compile(r"^[А-Яа-яЁё]+(?:-[А-Яа-яЁё]+)*$")
@@ -100,9 +101,12 @@ def generate(lemma: str, pos: str, morph) -> tuple[list[tuple[str, str]], str]:
 
 def _words(db: sqlite3.Connection, lexeme_ids: set[int] | None = None):
     for row in db.execute(
-        """SELECT id,lemma,pos FROM lexemes
-           WHERE entry_type='word' AND human_status!='hidden' ORDER BY id"""
+        """SELECT id,lemma,pos,entry_type FROM lexemes
+           WHERE entry_type IN ('word','abbreviation')
+             AND human_status!='hidden' ORDER BY id"""
     ):
+        if row["entry_type"] == "abbreviation" and row["lemma"] not in INFLECTING_ABBREVIATIONS:
+            continue
         if lexeme_ids is None or row["id"] in lexeme_ids:
             yield row
 
@@ -159,7 +163,7 @@ def plan(live: Path, morph=None) -> dict:
         existing = (set(r[0] for r in db.execute(
             """SELECT DISTINCT f.lexeme_id FROM lexeme_forms f
                JOIN lexemes l ON l.id=f.lexeme_id
-               WHERE l.entry_type='word' AND l.human_status!='hidden'
+               WHERE l.entry_type IN ('word','abbreviation') AND l.human_status!='hidden'
                  AND f.lemma_at_generation=l.lemma AND f.pos_at_generation=l.pos""")) if has_table else set())
     reasons = Counter()
     eligible = 0
