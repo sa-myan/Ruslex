@@ -42,11 +42,14 @@ sh scripts/verify_pronunciation.sh
 The script uses *separate test-only web and processing image tags*; it does
 **not** recreate or retag the production web container/image, or write to the
 live lexicon. It runs offline unit tests, the Svelte type/build check,
-Django's existing copy-based smoke tests, and a complete stress init/backfill
-rehearsal using an independently snapshotted SQLite database under
+Django's existing copy-based smoke tests both **before and after** the stress
+migration, and a complete stress init/backfill rehearsal using an independently
+snapshotted SQLite database under
 `/srv/data/ruslex/processing/stress_rehearsals`. The rehearsal runs with no network and no AI-credential mount, with the live
 lexicon mounted read-only. It fails on integrity errors, changed legacy
-record counts or non-idempotent backfill.
+record counts or non-idempotent backfill. The post-migration Django tests
+also exercise editor authorization, stress corrections, meaning associations,
+and public pronunciation display.
 
 
 On the VPS, after the PR has been reviewed and merged, and after a normal
@@ -85,7 +88,9 @@ and е/ё matching. The audit independently reports possible ё spelling
 disagreements even when a word is ambiguous or contains a source warning.
 Part-of-speech filtering abstains when the source type is unknown.
 Unambiguous, valid, matching-POS and matching-ё candidates are marked
-`safe_backfill`. No ambiguous, unknown-POS or malformed reading is imported
+`safe_backfill`. The plan reports `backfill_blockers` and
+`candidate_blocked_reference_types` so apparently ordinary candidates with
+unknown POS labels can be inspected rather than manually accepted blindly. No ambiguous, unknown-POS or malformed reading is imported
 automatically. Existing pronunciation rows are never overwritten.
 
 New textbook lexemes are automatically checked **at promotion time**, inside
