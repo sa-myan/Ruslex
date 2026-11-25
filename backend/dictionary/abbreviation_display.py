@@ -3,6 +3,11 @@
 The SQLite schema predates abbreviation support and stores lowercased lemmas.
 Keep lexicalized inflecting acronyms lowercased and preserve dotted spellings.
 """
+import re
+
+INITIALISM = re.compile(r"[а-яё]+(?:-[0-9]+)?")
+
+
 def display(lemma: str, entry_type: str, stressed: str | None = None) -> str:
     value = stressed or lemma
     if entry_type != "abbreviation":
@@ -11,6 +16,6 @@ def display(lemma: str, entry_type: str, stressed: str | None = None) -> str:
         return value
     # For initialisms the conventional written spelling is uppercase. The
     # underlying lemma remains lowercased for stable identity and search.
-    if value.isalpha() and value == value.lower():
+    if INITIALISM.fullmatch(value) and value == value.lower():
         return value.upper()
     return value
