@@ -150,11 +150,15 @@ def insert_senses(db, lexeme_id: int, senses):
 
 def find_or_add_word(db, lemma: str, pos: str, missing_words: set[str]):
     lemma = lemma.strip().lower()
-    existing = db.execute("SELECT id FROM lexemes WHERE lemma=? AND pos=? AND entry_type='word'",
+    existing = db.execute("""SELECT id FROM lexemes WHERE lemma=? AND pos=?
+                             AND entry_type IN ('word','abbreviation')""",
                           (lemma, pos)).fetchone()
     if existing:
         return existing[0]
-    options = db.execute("SELECT id FROM lexemes WHERE lemma=? AND entry_type='word'", (lemma,)).fetchall()
+    options = db.execute(
+        "SELECT id FROM lexemes WHERE lemma=? AND entry_type IN ('word','abbreviation')",
+        (lemma,),
+    ).fetchall()
     if len(options) == 1:
         return options[0][0]
     cursor = db.execute("INSERT INTO lexemes(lemma,pos,entry_type,human_status) VALUES(?,?,'word','followup')",
