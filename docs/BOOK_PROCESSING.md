@@ -56,6 +56,12 @@ or existing workspaces.
    unfinished mandatory form decisions, and promotes **only additional rows**.
    Existing reviewed words keep their senses, tags, relationships and notes.
 
+The normal pipeline distinguishes words, abbreviations and expressions. Familiar
+initialisms and dotted abbreviations are recognized during OCR; unfamiliar
+uppercase strings are flagged for AI interpretation instead of being silently
+added as ordinary nouns. Run the one-time abbreviation schema migration before
+importing a new book (see [ABBREVIATIONS.md](ABBREVIATIONS.md)).
+
 The normal pipeline adds senses to *newly admitted* lexemes before their
 first promotion, so the historical "promote → manually mark all kept →
 create a new enrichment workspace → promote again" cycle is no longer
