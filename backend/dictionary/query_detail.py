@@ -212,7 +212,7 @@ def detail(word_id: int, *, private_notes: bool = False) -> dict:
         "lemma": entry.lemma,
         "stressed_lemma": display_lemma(entry.lemma, readings),
         "pronunciations": readings,
-        "word_forms": inflected_forms(word_id) if entry.entry_type == "word" else [],
+        "word_forms": inflected_forms(word_id) if entry.entry_type in ("word", "abbreviation") else [],
         "pos": entry.pos,
         "entry_type": entry.entry_type,
         "aspect": entry.aspect,
