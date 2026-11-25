@@ -39,9 +39,19 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
         spelling = plain_spelling(lexeme["lemma"])
         all_matches = reference_by_key[lookup_key(spelling)]
         candidates, pos_filtered = candidate_words(all_matches, lexeme["pos"])
-        stress_forms = sorted({match_capitalization(w.stressed, spelling) for w in candidates})
+        # Malformed OpenRussian records are evidence for review, not a reason
+        # to abort the audit of every other lexeme.
+        aligned_forms = []
+        extra_warnings = []
+        for word in candidates:
+            try:
+                aligned_forms.append(match_capitalization(word.stressed, spelling))
+            except ValueError:
+                extra_warnings.append("reference stress characters do not align with lemma")
+        stress_forms = sorted(set(aligned_forms))
         clean_forms = sorted({plain_spelling(value) for value in stress_forms})
-        warnings = sorted({warning for w in candidates for warning in w.warnings})
+        warnings = sorted({warning for w in candidates for warning in w.warnings}
+                          | set(extra_warnings))
         # Ё is audited independently of ambiguity and source warnings.
         yo_variants = {w.spelling.casefold() for w in all_matches}
         yo_check = "different_spelling" if any(
