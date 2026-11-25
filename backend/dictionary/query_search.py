@@ -110,7 +110,7 @@ def _search_queryset(params, allow_review: bool):
             raise ValueError("Unknown part of speech")
         queryset = queryset.filter(pos=pos)
     if kind:
-        if kind not in {"word", "expression"}:
+        if kind not in {"word", "expression", "abbreviation"}:
             raise ValueError("Invalid entry type")
         queryset = queryset.filter(entry_type=kind)
     return queryset
