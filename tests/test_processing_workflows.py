@@ -7,11 +7,13 @@ import tempfile
 import zipfile
 from contextlib import closing
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
 from processing.forms import apply_decisions, review_batch
 from processing.book_status import status as book_status
+from processing.book_pipeline import start as start_book, advance as advance_book, finalize as finalize_book
 from processing.ocr import import_book, input_pages, inspect, tokenize
 from processing.promotion import create_workspace, plan, promote
 from processing.storage import write_database
@@ -58,6 +60,61 @@ class ProcessingTest(unittest.TestCase):
         self.assertFalse(result["ready_to_plan"])
         self.assertEqual(result["data_mutation"], "none")
         self.assertEqual(before, candidate.read_bytes())
+
+    def test_one_workspace_enriches_new_words_before_single_promotion(self):
+        fresh = self.root / "single_pass"
+        page = self.root / "one-page.md"
+        page.write_text("Мама дома.", encoding="utf-8")
+        started = start_book(self.live, fresh, page, book="Single Pass",
+                             edition="2026", first=1, last=1, analyzer=FakeMorph())
+        self.assertEqual(started["status"]["pending_forms"], 2)
+        with write_database(fresh / "candidate.db") as db:
+            pending = review_batch(db, "Single Pass", 20)
+            choices = [
+                {"id": item["id"],
+                 "decision": "admit" if item["surface"] == "мама" else "exclude",
+                 "confidence": "high",
+                 "entries": [{"lemma": "мама", "pos": "NOUN"}]
+                 if item["surface"] == "мама" else [],
+                 "reason": "one correct textbook word"}
+                for item in pending
+            ]
+            apply_decisions(db, pending, {"results": choices}, "mock")
+        validated = {"entries": [{
+            "id": 2, "aspect": None, "animacy": None, "relations": [],
+            "senses": [{
+                "meaning": "mother", "description": "", "tags": {
+                    "semantic": [], "grammatical": [], "usage": [],
+                },
+                "patterns": [], "examples": [{
+                    "russian": "Мама дома.", "english": "Mother is home.",
+                }],
+            }],
+        }]}
+        with patch("processing.workflow.opencode", return_value=validated) as model:
+            stage = advance_book(self.live, fresh, book="Single Pass",
+                                 model="provider/test", expressions=False)
+        self.assertEqual(model.call_count, 1)
+        self.assertEqual(stage["stage"], "ready_for_promotion")
+        self.assertTrue((fresh / "enrichment" / "new_lexemes.json").is_file())
+        with write_database(fresh / "candidate.db") as db:
+            self.assertEqual(db.execute(
+                "SELECT meaning FROM senses WHERE lexeme_id=2"
+            ).fetchone()[0], "mother")
+        finalized = finalize_book(self.live, fresh, self.root / "backups",
+                                  confirmed=True)
+        self.assertTrue(finalized["promoted"])
+        with write_database(self.live) as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM senses WHERE lexeme_id=2"
+            ).fetchone()[0], 1)
+            self.assertEqual(db.execute(
+                "SELECT notes FROM lexemes WHERE id=1"
+            ).fetchone()[0], "manual note")
+            self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        with self.assertRaises(RuntimeError):
+            advance_book(self.live, fresh, book="Single Pass",
+                         model="provider/test", expressions=False)
 
     def test_ocr_and_append_only_promotion_preserve_manual_editing(self):
         result = self.import_page()
