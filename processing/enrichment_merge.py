@@ -18,7 +18,7 @@ def _staged_lexemes(stage: Path, source: Path):
     with read_database(source) as db:
         selected_new = new_word_ids(stage)
         known = {row["id"]: dict(row) for row in db.execute(
-            "SELECT id,lemma,pos,human_status FROM lexemes WHERE entry_type='word' AND human_status!='hidden'")
+            "SELECT id,lemma,pos,entry_type,human_status FROM lexemes WHERE entry_type IN ('word','abbreviation') AND human_status!='hidden'")
             if row["human_status"] == "kept" or row["id"] in selected_new}
         unknown = selected_new - set(known)
         if unknown:
@@ -87,7 +87,7 @@ def apply_enrichment(workspace: Path) -> dict:
             row = db.execute("SELECT id,lemma,pos,entry_type FROM lexemes WHERE id=?",
                              (entry_id,)).fetchone()
             if not row or (row["lemma"], row["pos"], row["entry_type"]) != (
-                    known[entry_id]["lemma"], known[entry_id]["pos"], "word"):
+                    known[entry_id]["lemma"], known[entry_id]["pos"], known[entry_id]["entry_type"]):
                 raise RuntimeError(f"Lexeme changed since enrichment snapshot: {entry_id}")
             sense_count = db.execute("SELECT COUNT(*) FROM senses WHERE lexeme_id=?",
                                      (entry_id,)).fetchone()[0]
