@@ -17,7 +17,7 @@ from .abbreviations import KNOWN_ABBREVIATIONS, DOTTED_ABBREVIATIONS
 WORD = re.compile(r"(?<![\w])([А-Яа-яЁё](?:[А-Яа-яЁё\u0301\u0300]|[-‑](?=[А-Яа-яЁё]))*)(?![\w])")
 PAGE_MARKER = re.compile(r"(?im)^\s*<!--\s*page\s*:\s*(\d+)\s*-->\s*$")
 NUMBERED_ACRONYM = re.compile(
-    r"(?<![\\w])([А-ЯЁ]{2,9}-[0-9]{1,5})(?![\\w])"
+    r"(?<![\w])([А-ЯЁ]{2,9}-[0-9]{1,5})(?![\w])"
 )
 DOTTED_MATCH = re.compile(
     r"(?<![А-Яа-яЁё])(?:т\.\s*д\.|т\.\s*е\.|т\.\s*к\.|г\.|ул\.|стр\.|рис\.|им\.)(?![А-Яа-яЁё])",
