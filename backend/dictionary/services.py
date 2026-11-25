@@ -67,7 +67,7 @@ def _check_entry_type_change(entry: models.Lexeme, values: dict) -> None:
         return
 
     components = models.ExpressionComponent.objects.using(LEXICON)
-    if values["entry_type"] == "word":
+    if values["entry_type"] != "expression":
         if components.filter(expression_id=entry.id).exists():
             fail("Remove constituents before converting expression into a word")
     elif components.filter(word_id=entry.id).exists():
@@ -359,8 +359,8 @@ def save_component(word_id: int, data: dict, component_id: int | None = None) ->
     fields(data, {"word_id", "position", "surface", "notes"})
     expression = word(word_id)
     target = word(identifier(data, "word_id"))
-    if expression.entry_type != "expression" or target.entry_type != "word":
-        fail("An expression can only contain word entries")
+    if expression.entry_type != "expression" or target.entry_type not in {"word", "abbreviation"}:
+        fail("An expression can only contain words or abbreviations")
 
     values = {
         "expression_id": word_id,

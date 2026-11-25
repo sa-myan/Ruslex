@@ -10,6 +10,88 @@ checks. The old v3 corpus import and OCR form classification were adapted;
 the unsafe replacement-style enrichment DB rebuild has been removed from the
 public CLI.
 
+## Recommended workflow: one workspace, one promotion
+
+This supersedes the older, multi-command procedure below for **new books**.
+The older commands remain available for diagnosis, exceptional correction,
+or existing workspaces.
+
+1. Place your Mistral OCR export in `/srv/data/ruslex/ocr` (ZIP, JSON,
+   page folder or marked Markdown).
+2. Create an isolated workspace and import the entire detected OCR page range:
+
+   ~~~sh
+   ./process.sh book-start book3 --input /ocr/book3.zip --book 'Book Three'
+   ~~~
+
+   Use `--edition`, `--first`, `--last`, or `--offset` only when the
+   specific edition or page numbering needs them.
+
+3. Process OCR forms and missing senses (AI batches are resumable):
+
+   ~~~sh
+   ./process.sh book-run book3 --model 'provider/model-id' --max-batches 1
+   ./process.sh book-run book3
+   ~~~
+
+   Every AI stage now streams live progress to the terminal: `[AI forms]`
+   for OCR classifications, `[AI lexemes]` for vocabulary, `[AI pages]`
+   for expression extraction, and `[AI stress]` for pronunciation
+   exceptions. Messages show the batch/ID range, completed and remaining
+   items, validation retries, and elapsed time. They are flushed before
+   provider calls; on resume previously saved batches count toward progress.
+   An in-flight provider request has no artificial percentage estimate.
+   Final JSON output remains unchanged.
+
+   The first invocation is a small provider trial. On later invocations
+   the book title, model, verifier and expression setting are remembered.
+   Continue only if the report says more work remains. Without
+   `--max-batches`, the command processes all remaining batches.
+
+   Optional: use `--verify-model 'provider/second-id'` for independent
+   checks, and `--expressions` to analyze textbook pages for idioms.
+   Expression scanning can be expensive, so it is opt-in.
+
+4. Check the single final change plan and promote once:
+
+   ~~~sh
+   ./process.sh book-status book3 --book 'Book Three'
+   ./process.sh plan book3
+   ./process.sh book-promote book3 --confirm
+   ~~~
+
+   The promoter runs without network access, creates its own verified
+   database backup, refuses changes to existing curated records, rejects
+   unfinished mandatory form decisions, and promotes **only additional rows**.
+   Existing reviewed words keep their senses, tags, relationships and notes.
+
+The normal pipeline distinguishes words, abbreviations and expressions. Familiar
+initialisms and dotted abbreviations are recognized during OCR; unfamiliar
+uppercase strings are flagged for AI interpretation instead of being silently
+added as ordinary nouns. Run the one-time abbreviation schema migration before
+importing a new book (see [ABBREVIATIONS.md](ABBREVIATIONS.md)).
+
+The normal pipeline adds senses to *newly admitted* lexemes before their
+first promotion, so the historical "promote → manually mark all kept →
+create a new enrichment workspace → promote again" cycle is no longer
+necessary. New words remain individually reviewable after promotion.
+Items that AI cannot classify may remain `needs_review`; they do not
+prevent other valid textbook vocabulary from being imported.
+
+OpenRussian automatically supplies safe stressed headwords during promotion.
+Afterwards, an optional **book-scoped AI pronunciation exception pass**
+can process the small number still missing or ambiguous (see below).
+If the versioned form schema is installed, new words also receive
+morphologically generated inflection paradigms without a second run
+(see [WORD_FORMS.md](WORD_FORMS.md)).
+
+**Development safety:** test this workflow and the forms migration using
+`sh scripts/verify_book_pipeline.sh` in an isolated Git worktree before
+deploying. Neither a regular web request nor the AI worker ever receives
+permission to edit the live database.
+
+---
+
 ## 0. One-time processing setup
 
 ```bash
@@ -146,6 +228,74 @@ A form marked uncertain may also remain for future review, but make a
 conscious decision before promoting. New `lexeme_pages` occurrences are linked
 only to admitted analyses; an existing lexeme is reused, never replaced.
 
+### Quick progress check (any time after OCR import)
+
+Instead of inspecting raw SQLite tables or guessing what remains, run:
+
+```bash
+./process.sh book-status book2_2026 --book 'Second Russian Book'
+```
+
+This read-only report gives page count, pending and uncertain forms,
+attested lexemes, new entries and the next safe step. An uncertain form
+can be deferred; pending forms cannot be promoted. Use model batches
+for the routine form decisions, and manually review only unresolved cases.
+
+### Reusable AI pronunciation exception pass
+
+OpenRussian automatically supplies safe headword stress during ordinary
+promotion; this does **not** call an LLM. After promoting the book and
+adding its important senses, optionally run an AI pass on the **few
+remaining unresolved pronunciations from that book**:
+
+```bash
+./process.sh stress ai-run book2_stress \
+  --book 'Second Russian Book' --model 'provider/model-id' --dry-run
+./process.sh stress ai-run book2_stress \
+  --book 'Second Russian Book' --model 'provider/model-id' \
+  --verify-model 'provider/different-model-id' \
+  --batch-size 8 --max-batches 1
+# Repeat the same command without --max-batches to finish.
+./process.sh stress ai-plan book2_stress
+```
+
+The LLM sees each Ruslex meaning with stable sense IDs, short attested
+book contexts, and *separate* source glosses for every competing reading.
+Its output is strictly validated and saved in resumable batch files.
+Missing-reference suggestions stay **human-review only**. Only
+independently agreeing, high-confidence, source-backed homograph readings can
+qualify for automatic application. With one model, validated results are
+**actionable proposals**, not automatic approvals.
+
+For the current 43-case run, finish all batches *before* reclassifying `мгу`
+as an abbreviation: reclassification intentionally invalidates the old input
+manifest. Inspect the decisions using `ai-plan`. A human may approve
+individual IDs, including source-backed single-model decisions and
+well-supported AI stress suggestions (which are not labeled as source-backed).
+For example, after evaluating the complete preview:
+
+```bash
+./process.sh stress ai-plan book2_stress
+./manage.sh backup
+./process.sh stress ai-apply book2_stress --confirm --approve 21,93
+```
+
+Only include IDs after checking their proposed pronunciation against reliable
+linguistic evidence. `--approve` is never inferred from model confidence.
+The promoter rejects arbitrary IDs and incomplete AI runs, revalidates each
+source ID, and rejects stale meanings or case lists. Explicitly approved
+unsupported-source suggestions are stored with `source=manual`, not
+`source=openrussian`. Omit `--approve` to apply only entries that meet
+the strict independent-model eligibility rule.
+
+This runs with no network, automatically creates another database backup and
+rechecks live evidence. Existing pronunciation records are never replaced.
+Different meanings, conflicting variants, unsupported sources and uncertain
+model outputs can remain in the review queue for the normal editor.
+
+This optional pass is a continuation of the book-processing workflow,
+not a replacement for the existing form and sense validation stages.
+
 ## 5. Review the proposed changes and promote
 
 ```bash
@@ -245,7 +395,9 @@ Model use may incur charges and outbound data transfer. Do not send material
 to an external AI provider unless you have the necessary rights.
 
 Remember: **importing OCR**, **resolving word forms**, **enriching vocabulary**,
-**promoting data**, and **editing on the website** are five distinct stages.
+**promoting data**, **AI pronunciation exception review**, and **editing on the website**
+are separate, guarded stages. The normal case follows OpenRussian automatically;
+the exception stage is small, reusable and optional.
 
 ## Optional OpenRussian headword reference (no AI and no promotion)
 

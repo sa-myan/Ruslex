@@ -28,6 +28,15 @@
   </div>
   <div class="grid md:grid-cols-2 gap-4 mt-5">
     <section class="surface p-5">
+      <h3 class="font-bold mb-3">Active entry categories</h3>
+      {#each Object.entries(stats.entry_types ?? {}) as [type, count]}
+        <p class="py-2 flex justify-between border-b border-base-300">
+          <span>{type === 'abbreviation' ? 'Abbreviations' : type === 'expression' ? 'Expressions' : 'Words'}</span>
+          <strong>{count.toLocaleString()}</strong>
+        </p>
+      {/each}
+    </section>
+    <section class="surface p-5">
       <h3 class="font-bold mb-3">Entry review statuses</h3>
       {#each Object.entries(stats.word_status) as [status, count]}
         <p class="py-2 flex justify-between border-b border-base-300"><span>{status}</span><strong>{count}</strong></p>

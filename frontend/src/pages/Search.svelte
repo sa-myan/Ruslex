@@ -192,6 +192,7 @@
           <option value="">All</option>
           <option value="word">Words</option>
           <option value="expression">Expressions</option>
+          <option value="abbreviation">Abbreviations</option>
         </select>
       </label>
       <label class="field">
@@ -260,6 +261,7 @@
       <div class="flex gap-3 items-center flex-wrap">
         <strong class="russian text-xl">{word.stressed_lemma ?? word.lemma}</strong>
         <span class="badge badge-ghost">{word.pos}</span>
+        {#if word.entry_type === "abbreviation"}<span class="badge badge-outline">Abbreviation</span>{/if}
         {#if word.aspect}<span class="badge badge-outline">{word.aspect}</span>{/if}
         {#if $reviewMode}<span class="badge badge-warning">{word.human_status}</span>{/if}
       </div>

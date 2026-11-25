@@ -56,6 +56,9 @@ def identifier(data: dict, key: str, *, nullable: bool = False) -> int | None:
 
 
 WORD_PATTERN = re.compile(r"[а-яё]+(?:[-‑][а-яё]+)*")
+ABBREVIATION_PATTERN = re.compile(
+    r"(?:[а-яё]{2,}(?:-[а-яё0-9]+)*|[а-яё]{1,5}\.(?:\s*[а-яё]{1,5}\.)*)"
+)
 EXPRESSION_PATTERN = re.compile(
     r"[а-яё]+(?:[-‑][а-яё]+)*(?:[ ,]+[а-яё]+(?:[-‑][а-яё]+)*)+[.!?]?"
 )
@@ -74,14 +77,17 @@ def identity(data: dict, current=None) -> dict:
     lemma = data.get("lemma", current.lemma if current else None)
     pos = data.get("pos", current.pos if current else None)
 
-    if not isinstance(kind, str) or kind not in {"word", "expression"}:
+    if not isinstance(kind, str) or kind not in {"word", "expression", "abbreviation"}:
         fail("Invalid entry type")
     if not isinstance(lemma, str):
         fail("Lemma required")
 
     lemma = " ".join(lemma.split()).strip()
     lemma = unicodedata.normalize("NFC", lemma).replace("\u0301", "").casefold()
-    pattern = WORD_PATTERN if kind == "word" else EXPRESSION_PATTERN
+    pattern = (
+        ABBREVIATION_PATTERN if kind == "abbreviation"
+        else WORD_PATTERN if kind == "word" else EXPRESSION_PATTERN
+    )
     if not pattern.fullmatch(lemma) or len(lemma) > 120:
         fail("Enter a Russian word, or a multiword Russian expression")
 

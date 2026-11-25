@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 import unittest
 
+from dictionary.abbreviation_display import display as display_abbreviation
 from dictionary.validation import (
     BadRequest,
     external_url,
@@ -14,6 +15,14 @@ from dictionary.validation import (
 
 
 class ValidationTests(unittest.TestCase):
+    def test_abbreviation_display_keeps_initialisms_uppercase(self):
+        self.assertEqual(display_abbreviation("мгу", "abbreviation"), "МГУ")
+        self.assertEqual(display_abbreviation("ввэр-1200", "abbreviation"), "ВВЭР-1200")
+        self.assertEqual(display_abbreviation("вуз", "abbreviation"), "вуз")
+        self.assertEqual(display_abbreviation("т. д.", "abbreviation"), "т. д.")
+        self.assertEqual(display_abbreviation("мгу", "word"), "мгу")
+
+
     def test_unknown_fields_are_rejected(self):
         self.assertEqual(fields({"meaning": "word"}, {"meaning"}), {"meaning": "word"})
         for invalid in ({"meaning": "word", "surprise": 1}, ["meaning"], None):
@@ -50,6 +59,18 @@ class ValidationTests(unittest.TestCase):
         )
         self.assertEqual(identity({"lemma": "сделать"}, current)["aspect"], "imperfective")
         self.assertEqual(identity({"pos": "NOUN"}, current)["aspect"], None)
+
+    def test_abbreviations_are_entry_type_not_pos(self):
+        for lemma in ("МГУ", "вуз", "Т. Д.", "г.", "ВВЭР-1200"):
+            with self.subTest(lemma=lemma):
+                result = identity({"lemma": lemma, "pos": "NOUN",
+                                   "entry_type": "abbreviation"})
+                self.assertEqual(result["entry_type"], "abbreviation")
+        with self.assertRaises(BadRequest):
+            identity({"lemma": "т. д.", "pos": "NOUN", "entry_type": "word"})
+        with self.assertRaises(BadRequest):
+            identity({"lemma": "здравствуйте", "pos": "NOUN",
+                      "entry_type": "abbreviation", "aspect": "perfective"})
 
     def test_invalid_lexeme_values_never_raise_type_errors(self):
         invalid_payloads = [

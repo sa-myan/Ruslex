@@ -10,6 +10,8 @@ import re
 from .catalog import PARTS_OF_SPEECH, STATUSES
 from .models import Lexeme, Sense
 from .pronunciation import pronunciations_for, display_lemma
+from .abbreviation_display import display as display_abbreviation
+from .inflections import ids_matching as form_ids_matching
 from .query_helpers import (
     LEXICON, _page_counts, _sql_placeholders, legacy_rows, paginate,
     tags_for_senses,
@@ -60,7 +62,8 @@ def summaries(words: list, matching: dict | None = None) -> list[dict]:
             {
                 "id": entry.id,
                 "lemma": entry.lemma,
-                "stressed_lemma": display_lemma(entry.lemma, readings.get(entry.id, [])),
+                "stressed_lemma": display_abbreviation(entry.lemma, entry.entry_type,
+                                                      display_lemma(entry.lemma, readings.get(entry.id, []))),
                 "pos": entry.pos,
                 "entry_type": entry.entry_type,
                 "aspect": entry.aspect,
@@ -109,7 +112,7 @@ def _search_queryset(params, allow_review: bool):
             raise ValueError("Unknown part of speech")
         queryset = queryset.filter(pos=pos)
     if kind:
-        if kind not in {"word", "expression"}:
+        if kind not in {"word", "expression", "abbreviation"}:
             raise ValueError("Invalid entry type")
         queryset = queryset.filter(entry_type=kind)
     return queryset
@@ -185,9 +188,12 @@ def _rank_words(words: list, query: str, english: bool) -> list:
     ):
         matching_senses[item.lexeme_id].append(item)
 
+    exact_forms = form_ids_matching(query, {entry.id for entry in words}) if not english else set()
     ranked = []
     for entry in words:
         tier = score(entry.lemma, matching_senses[entry.id], query, english=english)
+        if entry.id in exact_forms and (tier is None or tier > 1):
+            tier = 1
         if tier is None:
             continue
         ranked.append(

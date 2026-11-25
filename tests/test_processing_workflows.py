@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import json
+import io
 import sqlite3
 import tempfile
 import zipfile
-from contextlib import closing
+from contextlib import closing, redirect_stderr
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
 from processing.forms import apply_decisions, review_batch
+from processing.book_status import status as book_status
+from processing.book_pipeline import start as start_book, advance as advance_book, finalize as finalize_book
 from processing.ocr import import_book, input_pages, inspect, tokenize
 from processing.promotion import create_workspace, plan, promote
 from processing.storage import write_database
@@ -46,6 +50,113 @@ class ProcessingTest(unittest.TestCase):
         with write_database(self.workspace / "candidate.db") as db:
             return import_book(db, title="Book Two", edition="2026", source=self.ocr,
                                first=1, last=1, analyzer=FakeMorph())
+
+    def test_book_status_summarizes_pending_forms_without_writing(self):
+        self.import_page()
+        candidate = self.workspace / "candidate.db"
+        before = candidate.read_bytes()
+        result = book_status(self.workspace, "Book Two")
+        self.assertEqual(result["pages_imported"], 1)
+        self.assertGreater(result["pending_forms"], 0)
+        self.assertFalse(result["ready_to_plan"])
+        self.assertEqual(result["data_mutation"], "none")
+        self.assertEqual(before, candidate.read_bytes())
+
+    def test_book_run_advances_from_form_ai_to_enrichment_in_one_call(self):
+        workspace = self.root / "automatic"
+        page = self.root / "automatic.md"
+        page.write_text("Мама дома.", encoding="utf-8")
+        start_book(self.live, workspace, page, book="Auto Book", edition="",
+                   first=1, last=1, analyzer=FakeMorph())
+        with write_database(workspace / "candidate.db") as db:
+            batch = review_batch(db, "Auto Book", 20)
+        decisions = {"results": [
+            {"id": row["id"], "decision": "admit" if row["surface"] == "мама" else "exclude",
+             "confidence": "high", "reason": "attested context",
+             "entries": [{"lemma": "мама", "pos": "NOUN"}]
+             if row["surface"] == "мама" else []}
+            for row in batch
+        ]}
+        enrichment = {"entries": [{
+            "id": 2, "aspect": None, "animacy": None, "relations": [],
+            "senses": [{
+                "meaning": "mother", "description": "",
+                "tags": {"semantic": [], "grammatical": [], "usage": []},
+                "patterns": [],
+                "examples": [{"russian": "Мама дома.", "english": "Mother is home."}],
+            }],
+        }]}
+        output = io.StringIO()
+        with redirect_stderr(output):
+            with patch("processing.forms.opencode", return_value=decisions) as forms_ai:
+                with patch("processing.workflow.opencode", return_value=enrichment) as lexeme_ai:
+                    result = advance_book(self.live, workspace, book="Auto Book",
+                                          model="provider/test", expressions=False)
+        self.assertIn("[AI forms] start:", output.getvalue())
+        self.assertIn("[AI lexemes] start:", output.getvalue())
+        self.assertIn("[AI book/complete]", output.getvalue())
+        self.assertEqual(result["stage"], "ready_for_promotion")
+        self.assertEqual(forms_ai.call_count, 1)
+        self.assertEqual(lexeme_ai.call_count, 1)
+        self.assertEqual(result["status"]["pending_forms"], 0)
+        self.assertEqual(result["enrichment"]["new_senses_on_entries"], 1)
+        with write_database(self.live) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM books").fetchone()[0], 0)
+
+    def test_one_workspace_enriches_new_words_before_single_promotion(self):
+        fresh = self.root / "single_pass"
+        page = self.root / "one-page.md"
+        page.write_text("Мама дома.", encoding="utf-8")
+        started = start_book(self.live, fresh, page, book="Single Pass",
+                             edition="2026", first=1, last=1, analyzer=FakeMorph())
+        self.assertEqual(started["status"]["pending_forms"], 2)
+        with write_database(fresh / "candidate.db") as db:
+            pending = review_batch(db, "Single Pass", 20)
+            choices = [
+                {"id": item["id"],
+                 "decision": "admit" if item["surface"] == "мама" else "exclude",
+                 "confidence": "high",
+                 "entries": [{"lemma": "мама", "pos": "NOUN"}]
+                 if item["surface"] == "мама" else [],
+                 "reason": "one correct textbook word"}
+                for item in pending
+            ]
+            apply_decisions(db, pending, {"results": choices}, "mock")
+        validated = {"entries": [{
+            "id": 2, "aspect": None, "animacy": None, "relations": [],
+            "senses": [{
+                "meaning": "mother", "description": "", "tags": {
+                    "semantic": [], "grammatical": [], "usage": [],
+                },
+                "patterns": [], "examples": [{
+                    "russian": "Мама дома.", "english": "Mother is home.",
+                }],
+            }],
+        }]}
+        with patch("processing.workflow.opencode", return_value=validated) as model:
+            stage = advance_book(self.live, fresh, book="Single Pass",
+                                 model="provider/test", expressions=False)
+        self.assertEqual(model.call_count, 1)
+        self.assertEqual(stage["stage"], "ready_for_promotion")
+        self.assertTrue((fresh / "enrichment" / "new_lexemes.json").is_file())
+        with write_database(fresh / "candidate.db") as db:
+            self.assertEqual(db.execute(
+                "SELECT meaning FROM senses WHERE lexeme_id=2"
+            ).fetchone()[0], "mother")
+        finalized = finalize_book(self.live, fresh, self.root / "backups",
+                                  confirmed=True)
+        self.assertTrue(finalized["promoted"])
+        with write_database(self.live) as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM senses WHERE lexeme_id=2"
+            ).fetchone()[0], 1)
+            self.assertEqual(db.execute(
+                "SELECT notes FROM lexemes WHERE id=1"
+            ).fetchone()[0], "manual note")
+            self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        with self.assertRaises(RuntimeError):
+            advance_book(self.live, fresh, book="Single Pass",
+                         model="provider/test", expressions=False)
 
     def test_ocr_and_append_only_promotion_preserve_manual_editing(self):
         result = self.import_page()

@@ -71,7 +71,25 @@ def sources_for_lexeme(db, lexeme_id: int):
     return selected
 
 
-def inputs(db, stage: str, *, book: str | None = None):
+def new_word_ids(workspace: Path) -> set[int]:
+    """New words explicitly selected for a one-promotion import.
+
+    Ordinary legacy enrichment workspaces do not have this file; those still
+    enrich only previously human-kept words.
+    """
+    file = workspace / "new_lexemes.json"
+    if not file.is_file():
+        return set()
+    data = json.loads(file.read_text(encoding="utf-8"))
+    if not isinstance(data, list) or any(type(item) is not int or item < 1 for item in data):
+        raise ValueError("Invalid selected new lexeme IDs")
+    if len(data) != len(set(data)):
+        raise ValueError("Duplicate IDs in selected new words")
+    return set(data)
+
+
+def inputs(db, stage: str, *, book: str | None = None,
+           allow_new_ids: set[int] | None = None):
     """Return only un-enriched kept words, or attested pages, optionally per book.
 
     The book filter prevents a second book from rerunning thousands of already
@@ -85,8 +103,9 @@ def inputs(db, stage: str, *, book: str | None = None):
             "Use a distinct title per imported edition until edition-scoped selection is supported."
         )
     if stage == "lexemes":
-        sql = """SELECT l.id,l.lemma,l.pos FROM lexemes l
-            WHERE l.entry_type='word' AND l.human_status='kept'
+        sql = """SELECT l.id,l.lemma,l.pos,l.entry_type,l.human_status FROM lexemes l
+            WHERE l.entry_type IN ('word','abbreviation')
+              AND l.human_status != 'hidden'
             AND NOT EXISTS (SELECT 1 FROM senses s WHERE s.lexeme_id=l.id)
         """
         values = []
@@ -97,8 +116,12 @@ def inputs(db, stage: str, *, book: str | None = None):
                 WHERE lp.lexeme_id=l.id AND b.title=?) """
             values.append(book)
         sql += " ORDER BY l.id"
+        selected_new = allow_new_ids or set()
         for row in db.execute(sql, values):
+            if row["human_status"] != "kept" and row["id"] not in selected_new:
+                continue
             yield {"id": row["id"], "lemma": row["lemma"], "pos": row["pos"],
+                   "entry_type": row["entry_type"] if "entry_type" in row.keys() else "word",
                    "contexts": sources_for_lexeme(db, row["id"])}
     else:
         sql = "SELECT p.id,p.markdown FROM pages p"
@@ -150,9 +173,14 @@ def prepare(db_path: Path, workspace: Path):
         if db.execute("PRAGMA journal_mode").fetchone()[0].lower() != "delete":
             raise RuntimeError("Sealed snapshot is not using DELETE journaling")
     counts = inventory(dest)
+    selection = workspace / "new_lexemes.json"
     manifest = {"snapshot_sha256": hashlib.sha256(dest.read_bytes()).hexdigest(),
                 "taxonomy_version": TAXONOMY_VERSION, "source": str(db_path.resolve()),
-                "counts": counts}
+                "counts": counts,
+                "new_lexemes_sha256": (
+                    hashlib.sha256(selection.read_bytes()).hexdigest()
+                    if selection.exists() else None
+                )}
     atomic_json(workspace / "manifest.json", manifest)
     return manifest
 
@@ -168,6 +196,12 @@ def checked_workspace(workspace: Path) -> Path:
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     if digest != record.get("snapshot_sha256"):
         raise RuntimeError("Source snapshot was modified; refusing to continue")
+    selection = workspace / "new_lexemes.json"
+    expected_selection = record.get("new_lexemes_sha256")
+    actual_selection = (hashlib.sha256(selection.read_bytes()).hexdigest()
+                        if selection.exists() else None)
+    if actual_selection != expected_selection:
+        raise RuntimeError("Selected new words changed since enrichment preparation")
     return source
 
 

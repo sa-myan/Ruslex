@@ -138,7 +138,7 @@ def meta(request):
                 {"code": code, "label": label} for code, label in PARTS_OF_SPEECH
             ],
             "tag_categories": ["grammatical", "semantic", "usage"],
-            "entry_types": ["word", "expression"],
+            "entry_types": ["word", "expression", "abbreviation"],
             "aspects": sorted(ASPECTS),
             "animacies": sorted(ANIMACIES),
             "relation_types": sorted(RELATIONS),

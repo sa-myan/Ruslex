@@ -138,6 +138,36 @@ def check_public_search(anonymous, queries, connections) -> None:
         )
 
 
+def check_word_forms(anonymous, connections) -> None:
+    """Verify morphology form search and entry detail on a migrated snapshot."""
+    from urllib.parse import quote
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE name='lexeme_forms'")
+        if cursor.fetchone() is None:
+            print("SKIP morphological forms tests: schema not installed in snapshot")
+            return
+        cursor.execute(
+            """SELECT f.lexeme_id,f.form,f.form_key
+               FROM lexeme_forms f JOIN lexemes l ON l.id=f.lexeme_id
+               WHERE l.human_status!='hidden' AND f.form_key!=lower(l.lemma)
+               ORDER BY length(f.form_key) DESC,f.lexeme_id LIMIT 1"""
+        )
+        row = cursor.fetchone()
+    if row is None:
+        print("SKIP morphology search test: no inflected forms in snapshot")
+        return
+    lexeme_id, form, _ = row
+    entry = anonymous.get(f"/api/lexemes/{lexeme_id}")
+    check(entry.status_code == 200 and
+          any(candidate["form"] == form for candidate in
+              entry.json()["word_forms"]),
+          "Inflected forms are visible in dictionary entry")
+    response = anonymous.get("/api/lexemes?q=" + quote(form))
+    ids = [item["id"] for item in response.json()["items"]]
+    check(response.status_code == 200 and lexeme_id in ids,
+          "Search by inflected form finds its dictionary lemma")
+
+
 def check_permissions(anonymous, reviewer, editor) -> None:
     check(
         json_request(anonymous, "patch", "/api/lexemes/1", {"notes": "bad"}).status_code == 403,
@@ -413,6 +443,49 @@ def check_pronunciation(anonymous, reviewer, editor, connections) -> None:
           == "пробаслово", "No reading falls back to original lemma")
 
 
+def check_abbreviations(anonymous, editor, connections) -> None:
+    """Abbreviations work as a third entry type on the migrated snapshot."""
+    from django.http import QueryDict
+    from dictionary import queries
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute("SELECT sql FROM sqlite_master WHERE name='lexemes'")
+        ddl = cursor.fetchone()[0]
+    if "'abbreviation'" not in ddl:
+        print("SKIP abbreviation integration: dictionary has not been migrated")
+        return
+    metadata = anonymous.get("/api/meta").json()
+    check("abbreviation" in metadata["entry_types"],
+          "API advertises abbreviation category")
+
+    created = json_request(editor, "post", "/api/lexemes", {
+        "lemma": "РЖДПРИМЕР", "pos": "NOUN", "entry_type": "abbreviation",
+    })
+    check(created.status_code == 201, "Editor can create abbreviation")
+    abbr_id = created.json()["id"]
+    detail = anonymous.get(f"/api/lexemes/{abbr_id}").json()
+    check(detail["entry_type"] == "abbreviation"
+          and detail["stressed_lemma"] == "РЖДПРИМЕР",
+          "Abbreviation retains kind and conventional uppercase display")
+    listing = queries.search(QueryDict("entry_type=abbreviation&q=рждпример"))
+    check(abbr_id in [entry["id"] for entry in listing["items"]],
+          "Abbreviations are searchable independently")
+
+    expression = json_request(editor, "post", "/api/lexemes", {
+        "lemma": "сказать пример", "pos": "OTHER",
+        "entry_type": "expression",
+    })
+    check(expression.status_code == 201, "Create temporary expression for abbreviation link")
+    expr_id = expression.json()["id"]
+    constituent = json_request(
+        editor, "post", f"/api/lexemes/{expr_id}/components",
+        {"word_id": abbr_id, "position": 1, "surface": "РЖДПРИМЕР", "notes": ""}
+    )
+    check(constituent.status_code == 201,
+          "Expressions can contain abbreviation entries")
+    check(anonymous.get(f"/api/lexemes/{expr_id}").status_code == 200,
+          "Expression with abbreviation renders normally")
+
+
 def check_signup(anonymous, User, SiteOptions) -> None:
     SiteOptions.objects.filter(pk=1).update(registration_open=True)
     signup = json_request(
@@ -462,6 +535,7 @@ def main() -> None:
         anonymous = Client(enforce_csrf_checks=True)
         check(anonymous.get("/api/auth/me").status_code == 200, "Auth handshake")
         check_public_search(anonymous, queries, connections)
+        check_word_forms(anonymous, connections)
 
         reviewer_user = User.objects.create_user("reviewer", password="StrongPassword!49")
         reviewer_user.groups.add(Group.objects.get(name="Reviewer"))
@@ -480,6 +554,7 @@ def main() -> None:
         check_existing_tag_reuse(anonymous, editor, connections)
         check_editing_workflow(anonymous, editor)
         check_pronunciation(anonymous, reviewer, editor, connections)
+        check_abbreviations(anonymous, editor, connections)
         check_signup(anonymous, User, SiteOptions)
         print("ALL DJANGO SMOKE TESTS PASSED; live databases were not touched")
 

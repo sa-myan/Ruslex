@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .storage import checked_workspace, read_database, staged_files, write_database, atomic_json
+from .storage import checked_workspace, read_database, staged_files, write_database, atomic_json, new_word_ids
 from .taxonomy import seed_tags
 from .validation import validate_lexemes, validate_pages, normalized
 from .workflow import find_or_add_word, insert_senses
@@ -16,8 +16,13 @@ from .workflow import find_or_add_word, insert_senses
 
 def _staged_lexemes(stage: Path, source: Path):
     with read_database(source) as db:
+        selected_new = new_word_ids(stage)
         known = {row["id"]: dict(row) for row in db.execute(
-            "SELECT id,lemma,pos FROM lexemes WHERE human_status='kept' AND entry_type='word'")}
+            "SELECT id,lemma,pos,entry_type,human_status FROM lexemes WHERE entry_type IN ('word','abbreviation') AND human_status!='hidden'")
+            if row["human_status"] == "kept" or row["id"] in selected_new}
+        unknown = selected_new - set(known)
+        if unknown:
+            raise RuntimeError(f"New enrichment word IDs are invalid or hidden: {sorted(unknown)}")
     entries = {}
     for path in staged_files(stage, "lexemes"):
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -82,7 +87,7 @@ def apply_enrichment(workspace: Path) -> dict:
             row = db.execute("SELECT id,lemma,pos,entry_type FROM lexemes WHERE id=?",
                              (entry_id,)).fetchone()
             if not row or (row["lemma"], row["pos"], row["entry_type"]) != (
-                    known[entry_id]["lemma"], known[entry_id]["pos"], "word"):
+                    known[entry_id]["lemma"], known[entry_id]["pos"], known[entry_id]["entry_type"]):
                 raise RuntimeError(f"Lexeme changed since enrichment snapshot: {entry_id}")
             sense_count = db.execute("SELECT COUNT(*) FROM senses WHERE lexeme_id=?",
                                      (entry_id,)).fetchone()[0]

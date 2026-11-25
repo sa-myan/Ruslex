@@ -12,8 +12,17 @@ import zipfile
 from collections import Counter
 from pathlib import Path
 
+from .abbreviations import KNOWN_ABBREVIATIONS, DOTTED_ABBREVIATIONS, uppercase_in_running_text
+
 WORD = re.compile(r"(?<![\w])([А-Яа-яЁё](?:[А-Яа-яЁё\u0301\u0300]|[-‑](?=[А-Яа-яЁё]))*)(?![\w])")
 PAGE_MARKER = re.compile(r"(?im)^\s*<!--\s*page\s*:\s*(\d+)\s*-->\s*$")
+NUMBERED_ACRONYM = re.compile(
+    r"(?<![\w])([А-ЯЁ]{2,9}-[0-9]{1,5})(?![\w])"
+)
+DOTTED_MATCH = re.compile(
+    r"(?<![А-Яа-яЁё])(?:т\.\s*д\.|т\.\s*е\.|т\.\s*к\.|г\.|ул\.|стр\.|рис\.|им\.)(?![А-Яа-яЁё])",
+    re.IGNORECASE,
+)
 POS_MAP = {"INFN": "VERB", "GRND": "VERB", "ADJS": "ADJF", "PRTS": "PRTF"}
 
 
@@ -28,7 +37,20 @@ def tokenize(markdown: str) -> list[tuple[str, str]]:
     clean = re.sub(r"\[([^]]+)\]\([^)]*\)", r"\1", clean)
     clean = re.sub(r"https?://\S+|<[^>]+>", " ", clean)
     result = []
+    dotted_spans = []
+    for match in DOTTED_MATCH.finditer(clean):
+        spelling = re.sub(r"\.\s*", ". ", match.group().casefold()).strip()
+        if spelling in DOTTED_ABBREVIATIONS:
+            context = " ".join(clean[max(0, match.start() - 100):match.end() + 100].split())[:230]
+            result.append((spelling, context))
+            dotted_spans.append((match.start(), match.end()))
+    for match in NUMBERED_ACRONYM.finditer(clean):
+        context = " ".join(clean[max(0, match.start()-100):match.end()+100].split())[:230]
+        result.append((normalize(match.group(1)), context))
+        dotted_spans.append((match.start(), match.end()))
     for match in WORD.finditer(clean):
+        if any(start <= match.start() < end for start, end in dotted_spans):
+            continue
         context = " ".join(clean[max(0, match.start() - 100):match.end() + 100].split())[:230]
         result.append((normalize(match.group(1)), context))
     return result
@@ -185,19 +207,44 @@ def inspect(path: Path) -> dict:
     }
 
 
-def parse_forms(surface: str, analyzer) -> list[dict]:
+def parse_forms(surface: str, analyzer, *, uppercase_hint: bool = False) -> list[dict]:
     """Keep alternate analyses for AI disambiguation, not a single guess."""
     seen = set()
     result = []
-    for analysis in analyzer.parse(surface):
+    analyses = list(analyzer.parse(surface))
+    known_word = any(
+        bool(getattr(item, "is_known", False))
+        and normalize(item.normal_form) == normalize(surface)
+        for item in analyses
+    )
+    # Known lexical abbreviations are not always parseable by pymorphy.
+    # Offer a classification option to the LLM, never infer from uppercase
+    # textbook headings or unfamiliar OCR tokens alone.
+    if surface in DOTTED_ABBREVIATIONS:
+        return [{"lemma": surface, "pos": "OTHER", "known": True,
+                 "entry_type": "abbreviation",
+                 "abbreviation_evidence": "known_written_abbreviation"}]
+    if (surface in KNOWN_ABBREVIATIONS or
+        (uppercase_hint and not known_word) or
+        NUMBERED_ACRONYM.fullmatch(surface.upper()) is not None
+    ):
+        result.append({"lemma": surface, "pos": "NOUN",
+                       "known": surface in KNOWN_ABBREVIATIONS,
+                       "entry_type": "abbreviation",
+                       "abbreviation_evidence": "recognized_lexical_abbreviation"
+                           if surface in KNOWN_ABBREVIATIONS else "uppercase_context_only"})
+        seen.add((surface, "NOUN", "abbreviation"))
+    for analysis in analyses:
         lemma = normalize(analysis.normal_form)
         raw_pos = str(analysis.tag.POS or "UNKNOWN")
         pos = POS_MAP.get(raw_pos, raw_pos)
-        if (lemma, pos) in seen:
+        category = "abbreviation" if lemma in KNOWN_ABBREVIATIONS else "word"
+        if (lemma, pos, category) in seen:
             continue
-        seen.add((lemma, pos))
+        seen.add((lemma, pos, category))
         result.append({"lemma": lemma, "pos": pos,
-                       "known": bool(getattr(analysis, "is_known", False))})
+                       "known": bool(getattr(analysis, "is_known", False)),
+                       "entry_type": category})
         if len(result) >= 7:
             break
     return result
@@ -223,6 +270,18 @@ def import_book(db, *, title: str, edition: str, source: Path,
                          (title, edition)).fetchone()[0]
     counts = {"pages_added": 0, "pages_skipped": 0, "new_forms_for_AI": 0,
               "book_id": book_id}
+    # Discover useful uppercase spellings before caching per-surface analyses:
+    # otherwise a later page cannot contribute evidence to a cached analysis.
+    abbreviation_hints = set()
+    for _, markdown in selected:
+        possible = {
+            candidate for candidate in re.findall(
+                r"(?<![А-Яа-яЁё])([А-ЯЁ]{2,9})(?![А-Яа-яЁё])", markdown
+            )
+        }
+        for candidate in possible:
+            if uppercase_in_running_text(markdown, candidate):
+                abbreviation_hints.add(normalize(candidate))
     parsed = {}
     for physical, markdown in selected:
         existing = db.execute("SELECT markdown FROM pages WHERE book_id=? AND pdf_page=?",
@@ -246,7 +305,9 @@ def import_book(db, *, title: str, edition: str, source: Path,
                 db.execute("INSERT INTO surface_pages(page_id,surface,count,context) VALUES(?,?,?,?)",
                            (page_id, form, count, contexts[form]))
                 if form not in parsed:
-                    parsed[form] = parse_forms(form, analyzer)
+                    parsed[form] = parse_forms(
+                        form, analyzer, uppercase_hint=form in abbreviation_hints
+                    )
                 result = db.execute(
                     "INSERT OR IGNORE INTO reviews(book_id,surface,analyses_json) VALUES(?,?,?)",
                     (book_id, form, json.dumps(parsed[form], ensure_ascii=False))
@@ -255,7 +316,8 @@ def import_book(db, *, title: str, edition: str, source: Path,
                 review = db.execute("SELECT status,entries_json FROM reviews WHERE book_id=? AND surface=?",
                                     (book_id, form)).fetchone()
                 if review and review[0] == "admitted":
-                    for lemma, pos in json.loads(review[1]):
+                    for entry in json.loads(review[1]):
+                        lemma, pos = entry[:2]
                         lexeme = db.execute("SELECT id FROM lexemes WHERE lemma=? AND pos=?",
                                             (lemma, pos)).fetchone()
                         if lexeme:

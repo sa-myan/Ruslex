@@ -13,6 +13,8 @@ from .models import (
 )
 from .query_helpers import LEXICON, legacy_rows, one, tags_for_senses
 from .pronunciation import pronunciations_for, display_lemma, sense_ids_for
+from .abbreviation_display import display as display_abbreviation
+from .inflections import for_entry as inflected_forms
 
 
 def _sense_rows(word_id: int) -> list[dict]:
@@ -209,8 +211,10 @@ def detail(word_id: int, *, private_notes: bool = False) -> dict:
     return {
         "id": entry.id,
         "lemma": entry.lemma,
-        "stressed_lemma": display_lemma(entry.lemma, readings),
+        "stressed_lemma": display_abbreviation(entry.lemma, entry.entry_type,
+                                                  display_lemma(entry.lemma, readings)),
         "pronunciations": readings,
+        "word_forms": inflected_forms(word_id) if entry.entry_type in ("word", "abbreviation") else [],
         "pos": entry.pos,
         "entry_type": entry.entry_type,
         "aspect": entry.aspect,

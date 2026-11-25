@@ -110,6 +110,13 @@ def stats() -> dict:
     tables = ("books", "pages", "lexemes", "senses", "examples", "patterns")
     return {
         "counts": {table: one(f"SELECT COUNT(*) n FROM {table}")["n"] for table in tables},
+        "entry_types": {
+            row["entry_type"]: row["n"]
+            for row in legacy_rows(
+                "SELECT entry_type, COUNT(*) AS n FROM lexemes "
+                "WHERE human_status!='hidden' GROUP BY entry_type"
+            )
+        },
         "word_status": {
             row["human_status"]: row["n"]
             for row in legacy_rows("SELECT human_status, COUNT(*) n FROM lexemes GROUP BY human_status")
