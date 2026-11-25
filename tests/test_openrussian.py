@@ -122,6 +122,46 @@ class OpenRussianTests(unittest.TestCase):
         self.assertFalse(rows["все"]["safe_backfill"])
         self.assertTrue(rows["читать"]["safe_backfill"])
 
+    def test_orphan_apostrophe_is_source_warning_not_fatal(self):
+        # Real OpenRussian dumps sometimes contain apostrophes which do not
+        # follow vowels. They must not shift the capitalization index or
+        # enter the automatic backfill.
+        from processing.openrussian import normalize_accented
+        normalized, warnings = normalize_accented("до'м'")
+        self.assertTrue(warnings)
+        self.assertEqual(match_capitalization(normalized, "Дом"), "До\u0301м'")
+        with closing(sqlite3.connect(self.reference)) as ref:
+            ref.execute(
+                "INSERT INTO words VALUES(?,?,?,?,?,?)",
+                ("orphan", "дом", "до'м'", "noun", "", ""),
+            )
+            ref.commit()
+        with closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.execute(
+                "INSERT INTO lexemes VALUES(8,'Дом','NOUN','word')"
+            )
+            lex.commit()
+        with connect_reference(self.reference) as ref, closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.row_factory = sqlite3.Row
+            rows = audit_entries(ref, lex)
+        found = next(row for row in rows if row["lemma"] == "Дом")
+        self.assertEqual(found["status"], "source_warning")
+        self.assertFalse(found["safe_backfill"])
+
+    def test_unalignable_reference_is_reported_not_fatal(self):
+        with closing(sqlite3.connect(self.reference)) as ref:
+            ref.execute(
+                "INSERT INTO words VALUES(?,?,?,?,?,?)",
+                ("misaligned", "читать", "чита'т\u0301ь", "verb", "", ""),
+            )
+            ref.commit()
+        with connect_reference(self.reference) as ref, closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.row_factory = sqlite3.Row
+            rows = audit_entries(ref, lex)
+        item = next(row for row in rows if row["lemma"] == "читать")
+        self.assertEqual(item["status"], "source_warning")
+        self.assertFalse(item["safe_backfill"])
+
     def test_schema_and_backfill_preserve_original_headwords(self):
         backup_dir = self.root / "backups"
         before = self.lexicon.read_bytes()
