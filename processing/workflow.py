@@ -5,12 +5,14 @@ import tempfile
 from pathlib import Path
 from .prompts import BASE_PROMPT, LEXEME_TASK, PAGE_TASK
 from .provider import opencode
+from .progress import AIProgress
 from .storage import read_database, write_database, snapshot, atomic_json, checked_workspace, staged_files, inputs, chunks, new_word_ids
 from .validation import validate_lexemes, validate_pages, normalized
 from .taxonomy import seed_tags
 
 def validated_model_batch(response, *, stage: str, batch, prompt: str, model: str,
-                          executable: str, timeout: int, workspace: Path, phase: str):
+                          executable: str, timeout: int, workspace: Path, phase: str,
+                          progress: AIProgress | None = None):
     """Validate model output; request at most two targeted repairs when needed.
 
     Rejected responses are kept for inspection but are never imported.
@@ -31,8 +33,12 @@ def validated_model_batch(response, *, stage: str, batch, prompt: str, model: st
                     f"{stage} batch {first}-{last} failed validation after 3 responses: "
                     f"{exc}. Rejected output saved in {rejected}"
                 ) from exc
-            print(f"{stage} batch {first}-{last}: {exc}; "
-                  f"requesting correction {attempt + 1}/2", flush=True)
+            if progress:
+                progress.retry(first_id=first, last_id=last,
+                               attempt=attempt + 1, error=str(exc), phase=phase)
+            else:
+                print(f"{stage} batch {first}-{last}: {exc}; "
+                      f"requesting correction {attempt + 1}/2", flush=True)
             repair_prompt = (BASE_PROMPT + "\n\nVALIDATION REPAIR: The following output failed "
                 "a strict database validation check. Correct the error, preserving "
                 "all other sound linguistic content. Return the COMPLETE corrected "
@@ -62,7 +68,15 @@ def run(workspace: Path, *, stage: str, model: str, executable: str,
                            allow_new_ids=new_word_ids(workspace)))
     expected = len(todo)
     completed = 0
-    for batch in chunks(todo, batch_size):
+    all_batches = list(chunks(todo, batch_size))
+    prior = sum(len(batch) for batch in all_batches
+                if (workspace / "batches" / stage /
+                    f"{batch[0]['id']:06d}-{batch[-1]['id']:06d}.json").exists())
+    progress = AIProgress(stage, total=expected, completed=prior,
+                          batch_size=batch_size, max_batches=max_batches)
+    if not dry_run:
+        progress.begin()
+    for batch_number, batch in enumerate(all_batches, start=1):
         ids = [item["id"] for item in batch]
         target = workspace / "batches" / stage / f"{ids[0]:06d}-{ids[-1]:06d}.json"
         if target.exists():
@@ -76,11 +90,17 @@ def run(workspace: Path, *, stage: str, model: str, executable: str,
                               "model": model, "prompt_preview": prompt[:2000]},
                              ensure_ascii=False, indent=2))
             break
-        response = opencode(prompt, model, executable, timeout)
-        validated = validated_model_batch(
-            response, stage=stage, batch=batch, prompt=prompt, model=model,
-            executable=executable, timeout=timeout, workspace=workspace,
-            phase="generate")
+        progress.batch_start(number=batch_number, first_id=ids[0],
+                             last_id=ids[-1], count=len(ids))
+        try:
+            response = opencode(prompt, model, executable, timeout)
+            validated = validated_model_batch(
+                response, stage=stage, batch=batch, prompt=prompt, model=model,
+                executable=executable, timeout=timeout, workspace=workspace,
+                phase="generate", progress=progress)
+        except Exception as exc:
+            progress.failure(exc)
+            raise
         normalized_result = {"input_ids": ids,
                              "entries" if stage == "lexemes" else "expressions": validated}
         if verify_model:
@@ -91,16 +111,22 @@ def run(workspace: Path, *, stage: str, model: str, executable: str,
                 "including all requested IDs and actual page attestations. "
                 "ORIGINAL SOURCE INPUT:\n" + payload + "\nPRIOR OUTPUT:\n" +
                 json.dumps(normalized_result, ensure_ascii=False))
-            reviewed = opencode(verify_prompt, verify_model, executable, timeout)
-            validated = validated_model_batch(
-                reviewed, stage=stage, batch=batch, prompt=verify_prompt,
-                model=verify_model, executable=executable, timeout=timeout,
-                workspace=workspace, phase="verify")
+            try:
+                reviewed = opencode(verify_prompt, verify_model, executable, timeout)
+                validated = validated_model_batch(
+                    reviewed, stage=stage, batch=batch, prompt=verify_prompt,
+                    model=verify_model, executable=executable, timeout=timeout,
+                    workspace=workspace, phase="verify", progress=progress)
+            except Exception as exc:
+                progress.failure(exc)
+                raise
             normalized_result = {"input_ids": ids,
                                  "entries" if stage == "lexemes" else "expressions": validated}
         atomic_json(target, normalized_result)
         completed += 1
-        print(f"{stage}: saved {target.name}; {len(validated)} records", flush=True)
+        progress.saved(len(ids), extra=f"{len(validated)} records; file {target.name}")
+    if not dry_run:
+        progress.finish()
     remaining = sum(not (workspace / "batches" / stage /
                         f"{part[0]['id']:06d}-{part[-1]['id']:06d}.json").exists()
                     for part in chunks(todo, batch_size))
