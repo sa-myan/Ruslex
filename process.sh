@@ -85,7 +85,7 @@ case "$command" in
   stress)
     case "${1:-}" in
       init|backfill|ai-apply) compose run --rm --no-deps promoter python -m processing.cli stress "$@" ;;
-      plan|diagnose|rehearse|ai-plan) compose run --rm --no-deps rehearsal python -m processing.cli stress "$@" ;;
+      plan|diagnose|rehearse|ai-plan|ai-approval-plan) compose run --rm --no-deps rehearsal python -m processing.cli stress "$@" ;;
       ai-run) ensure_state; compose run --rm --no-deps worker python -m processing.cli stress "$@" ;;
       *) echo "Use ./process.sh stress {plan|diagnose|rehearse|init|backfill|ai-run|ai-plan|ai-apply}" >&2; exit 2 ;;
     esac
