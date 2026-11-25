@@ -103,8 +103,9 @@ def inputs(db, stage: str, *, book: str | None = None,
             "Use a distinct title per imported edition until edition-scoped selection is supported."
         )
     if stage == "lexemes":
-        sql = """SELECT l.id,l.lemma,l.pos,l.human_status FROM lexemes l
-            WHERE l.entry_type='word' AND l.human_status != 'hidden'
+        sql = """SELECT l.id,l.lemma,l.pos,l.entry_type,l.human_status FROM lexemes l
+            WHERE l.entry_type IN ('word','abbreviation')
+              AND l.human_status != 'hidden'
             AND NOT EXISTS (SELECT 1 FROM senses s WHERE s.lexeme_id=l.id)
         """
         values = []
@@ -120,6 +121,7 @@ def inputs(db, stage: str, *, book: str | None = None,
             if row["human_status"] != "kept" and row["id"] not in selected_new:
                 continue
             yield {"id": row["id"], "lemma": row["lemma"], "pos": row["pos"],
+                   "entry_type": row["entry_type"] if "entry_type" in row.keys() else "word",
                    "contexts": sources_for_lexeme(db, row["id"])}
     else:
         sql = "SELECT p.id,p.markdown FROM pages p"
