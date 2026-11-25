@@ -18,6 +18,7 @@ from .forms import resolve, review_batch, apply_decisions
 from .openrussian import connect_reference, lookup, result as reference_result, verify_schema, reference_fingerprint
 from .reference_audit import audit_entries, write_report, suggested_report_path
 from .stress_diagnostics import diagnose as diagnose_stress
+from .stress_ai import analyze as stress_ai_analyze, plan as stress_ai_plan, apply as stress_ai_apply
 from .pronunciations import initialize as stress_initialize, backfill_plan as stress_plan, apply_backfill as stress_apply, rehearse as stress_rehearse
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan, promote, workspace_paths
@@ -58,6 +59,19 @@ def main(argv=None):
     stress_actions.add_parser("plan", help="Show safe candidates; no writes")
     stress_actions.add_parser("diagnose", help="Explain remaining headwords; report only")
     stress_actions.add_parser("rehearse", help="Test migration/backfill against an isolated snapshot")
+    ai_run = stress_actions.add_parser("ai-run", help="Resumable AI pronunciation exceptions; stages only")
+    ai_run.add_argument("name")
+    ai_run.add_argument("--model", required=True)
+    ai_run.add_argument("--verify-model")
+    ai_run.add_argument("--batch-size", type=int, default=8)
+    ai_run.add_argument("--max-batches", type=int)
+    ai_run.add_argument("--timeout", type=int, default=240)
+    ai_run.add_argument("--dry-run", action="store_true")
+    ai_plan = stress_actions.add_parser("ai-plan", help="Review staged AI decisions; read-only")
+    ai_plan.add_argument("name")
+    ai_apply = stress_actions.add_parser("ai-apply", help="Apply only doubly-verified choices, after backup")
+    ai_apply.add_argument("name")
+    ai_apply.add_argument("--confirm", action="store_true", required=True)
     for action in ("init", "backfill"):
         step = stress_actions.add_parser(action)
         step.add_argument("--confirm", action="store_true", required=True)
@@ -133,6 +147,17 @@ def main(argv=None):
                 result = stress_plan(LIVE_DB, REFERENCE_DB)
             elif args.stress_action == "diagnose":
                 result = diagnose_stress(LIVE_DB, REFERENCE_DB, WORK_ROOT)
+            elif args.stress_action == "ai-run":
+                result = stress_ai_analyze(
+                    LIVE_DB, REFERENCE_DB, WORK_ROOT, name=args.name,
+                    model=args.model, verify_model=args.verify_model,
+                    batch_size=args.batch_size, max_batches=args.max_batches,
+                    timeout=args.timeout, dry_run=args.dry_run)
+            elif args.stress_action == "ai-plan":
+                result = stress_ai_plan(LIVE_DB, REFERENCE_DB, WORK_ROOT, args.name)
+            elif args.stress_action == "ai-apply":
+                result = stress_ai_apply(LIVE_DB, REFERENCE_DB, WORK_ROOT,
+                                         BACKUP_ROOT, args.name)
             elif args.stress_action == "rehearse":
                 result = stress_rehearse(LIVE_DB, REFERENCE_DB, WORK_ROOT)
             elif args.stress_action == "init":
