@@ -14,7 +14,7 @@ from processing.abbreviations import (
     initialize, categorize, plan, rehearse, supports_abbreviations,
 )
 from processing.forms import apply_decisions
-from processing.ocr import parse_forms
+from processing.ocr import parse_forms, tokenize
 
 SCHEMA = Path(__file__).parent / "fixtures" / "empty_lexicon_schema.sql"
 
@@ -134,6 +134,17 @@ class AbbreviationTests(unittest.TestCase):
             self.assertEqual(db.execute(
                 "SELECT entry_type FROM lexemes WHERE id=1"
             ).fetchone()[0], "word")
+
+    def test_dotted_abbreviations_are_one_token_not_letters(self):
+        tokens = tokenize("Это т. д. и т. е. Например, рис. 2.")
+        surfaces = [surface for surface, _ in tokens]
+        self.assertIn("т. д.", surfaces)
+        self.assertIn("т. е.", surfaces)
+        self.assertIn("рис.", surfaces)
+        self.assertNotIn("д", surfaces)
+        self.assertNotIn("е", surfaces)
+        options = parse_forms("т. д.", FakeMorph())
+        self.assertEqual(options[0]["entry_type"], "abbreviation")
 
     def test_rehearsal_never_writes_original(self):
         initial = self.live.read_bytes()
