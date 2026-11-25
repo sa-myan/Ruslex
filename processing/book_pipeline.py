@@ -20,7 +20,7 @@ SETTINGS_FILE = "book-run-settings.json"
 
 
 def start(live: Path, workspace: Path, source: Path, *,
-          book: str, edition: str, first: int, last: int,
+          book: str, edition: str, first: int | None, last: int | None,
           offset: int = 0, page_shift: int = 0, analyzer=None) -> dict:
     """Create one isolated workspace and OCR-import the requested pages."""
     if not book.strip():
@@ -29,6 +29,8 @@ def start(live: Path, workspace: Path, source: Path, *,
     inspected = inspect(source)
     if inspected["pages"] < 1:
         raise ValueError("OCR has no pages")
+    first = inspected["first_page"] if first is None else first
+    last = inspected["last_page"] if last is None else last
     create_workspace(live, workspace)
     with write_database(workspace / "candidate.db") as db:
         imported = import_book(
@@ -72,13 +74,27 @@ def _select_new_words(workspace: Path) -> list[int]:
         ]
 
 
-def advance(live: Path, workspace: Path, *, book: str, model: str,
+def advance(live: Path, workspace: Path, *, book: str | None = None,
+            model: str | None = None,
             verify_model: str | None = None, expressions: bool = True,
             max_batches: int | None = None, timeout: int = 300,
             dry_run: bool = False, executable: str = "opencode") -> dict:
     """Advance to the next unfinished step; safe to repeat after interruptions."""
-    if not model.strip():
-        raise ValueError("Model ID is required")
+    existing = workspace / SETTINGS_FILE
+    if existing.is_file():
+        previous = json.loads(existing.read_text(encoding="utf-8"))
+        book = book or previous["book"]
+        model = model or previous["model"]
+        verify_model = verify_model or previous["verify_model"]
+        expressions = expressions or previous["expressions"]
+    elif book is None:
+        imported = workspace / "book-import.json"
+        if imported.is_file():
+            book = json.loads(imported.read_text(encoding="utf-8"))["book"]
+    if not book:
+        raise ValueError("No book title specified or recorded in workspace")
+    if not model or not model.strip():
+        raise ValueError("Model ID is required on the first book-run")
     if verify_model and verify_model == model:
         raise ValueError("Verifier must be a distinct model ID")
     if max_batches is not None and max_batches < 1:
