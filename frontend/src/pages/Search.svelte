@@ -258,7 +258,7 @@
       onclick={(event) => { event.preventDefault(); navigate(`/word/${word.id}`); }}
     >
       <div class="flex gap-3 items-center flex-wrap">
-        <strong class="russian text-xl">{word.lemma}</strong>
+        <strong class="russian text-xl">{word.stressed_lemma ?? word.lemma}</strong>
         <span class="badge badge-ghost">{word.pos}</span>
         {#if word.aspect}<span class="badge badge-outline">{word.aspect}</span>{/if}
         {#if $reviewMode}<span class="badge badge-warning">{word.human_status}</span>{/if}

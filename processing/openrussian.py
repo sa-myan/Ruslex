@@ -19,7 +19,8 @@ VOWELS = "аеёиоуыэюяАЕЁИОУЫЭЮЯ"
 # Apostrophes are OpenRussian's stress markers when following a Russian vowel.
 APOSTROPHE_STRESS = re.compile(rf"([{VOWELS}])['\u2019]")
 PARTNER_SEPARATOR = re.compile(r"[;,]")
-CYRILLIC_WORD = re.compile(r"^[А-Яа-яЁё]+$")
+CYRILLIC_WORD = re.compile(r"^[А-Яа-яЁё]+(?:-[А-Яа-яЁё]+)*$")
+HYPHENS = str.maketrans({"‐": "-", "‑": "-", "–": "-"})
 
 
 @dataclass(frozen=True)
@@ -37,12 +38,42 @@ class ReferenceWord:
 
 def plain_spelling(text: str) -> str:
     """Remove stress markup without collapsing ё into е."""
-    return unicodedata.normalize("NFC", text.replace(ACUTE, "").replace("'", "").replace("\u2019", "")).strip()
+    return unicodedata.normalize("NFC", text.replace(ACUTE, "").replace("'", "").replace("\u2019", "").translate(HYPHENS)).strip()
 
 
 def lookup_key(text: str) -> str:
     """Loose key for finding ё spellings; not a lexical identity key."""
     return plain_spelling(text).casefold().replace("ё", "е")
+
+
+def match_capitalization(stressed: str, lemma: str) -> str:
+    """Retain Ruslex case while preserving OpenRussian stress and ё locations."""
+    source = plain_spelling(stressed)
+    target = plain_spelling(lemma)
+    if lookup_key(source) != lookup_key(target) or len(source) != len(target):
+        raise ValueError("Headword spellings are not letter-aligned")
+    result = []
+    index = 0
+    for char in stressed:
+        if char == ACUTE:
+            result.append(char)
+            continue
+        # An orphan apostrophe is retained for source review; it is not a
+        # character of the headword and must not advance the letter index.
+        # normalize_accented() already marks it as a source warning.
+        if char in ("'", "\u2019"):
+            result.append(char)
+            continue
+        if index >= len(target):
+            raise ValueError("Reference has more headword characters than Ruslex")
+        result.append(
+            char.upper() if target[index].isupper()
+            else char.lower() if char.isalpha() else char
+        )
+        index += 1
+    if index != len(target):
+        raise ValueError("Reference has fewer headword characters than Ruslex")
+    return "".join(result)
 
 
 def normalize_accented(text: str) -> tuple[str, tuple[str, ...]]:
@@ -51,7 +82,7 @@ def normalize_accented(text: str) -> tuple[str, tuple[str, ...]]:
     Always validate: malformed source values remain visible but are not trusted
     for automatic suggestions. NFC is applied before inserting acute marks.
     """
-    source = unicodedata.normalize("NFC", text.strip())
+    source = unicodedata.normalize("NFC", text.strip().translate(HYPHENS))
     warnings: list[str] = []
     if any(c in source for c in ("'", "\u2019")):
         source = APOSTROPHE_STRESS.sub(lambda match: match.group(1) + ("" if match.group(1) in "ёЁ" else ACUTE), source)
@@ -231,5 +262,7 @@ def candidate_words(words: list[ReferenceWord], pos: str) -> tuple[list[Referenc
     types = [pos_code(word.word_type) for word in words]
     if not words or any(code is None for code in types):
         return words, False
-    compatible = [word for word, code in zip(words, types) if code == pos]
+    # Ruslex uses pymorphy-style POS codes; normalize the safe equivalences.
+    normalized_pos = {"INFN": "VERB", "ADJS": "ADJF", "COMP": "ADJF"}.get(pos, pos)
+    compatible = [word for word, code in zip(words, types) if code == normalized_pos]
     return (compatible, True) if compatible else (words, False)

@@ -17,6 +17,7 @@ from .enrichment_merge import apply_enrichment
 from .forms import resolve, review_batch, apply_decisions
 from .openrussian import connect_reference, lookup, result as reference_result, verify_schema, reference_fingerprint
 from .reference_audit import audit_entries, write_report, suggested_report_path
+from .pronunciations import initialize as stress_initialize, backfill_plan as stress_plan, apply_backfill as stress_apply, rehearse as stress_rehearse
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan, promote, workspace_paths
 from .storage import atomic_json, inventory, prepare, read_database, write_database
@@ -51,6 +52,13 @@ def main(argv=None):
     ref_lookup.add_argument("lemma", help="One Russian dictionary headword")
     ref_lookup.add_argument("--forms", action="store_true", help="Include inflected forms as reference data")
     reference_commands.add_parser("audit", help="Export stress/ё candidates for Ruslex lexemes")
+    stress = commands.add_parser("stress", help="Pronunciation migration and read-only plan")
+    stress_actions = stress.add_subparsers(dest="stress_action", required=True)
+    stress_actions.add_parser("plan", help="Show safe candidates; no writes")
+    stress_actions.add_parser("rehearse", help="Test migration/backfill against an isolated snapshot")
+    for action in ("init", "backfill"):
+        step = stress_actions.add_parser(action)
+        step.add_argument("--confirm", action="store_true", required=True)
     audit_cmd = commands.add_parser("audit", help="Read-only audit of live or staged dictionary")
     audit_cmd.add_argument("--workspace", help="Optional candidate workspace name")
     audit_cmd.add_argument("--sample-size", type=int, default=150)
@@ -118,7 +126,16 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
-        if args.command == "reference":
+        if args.command == "stress":
+            if args.stress_action == "plan":
+                result = stress_plan(LIVE_DB, REFERENCE_DB)
+            elif args.stress_action == "rehearse":
+                result = stress_rehearse(LIVE_DB, REFERENCE_DB, WORK_ROOT)
+            elif args.stress_action == "init":
+                result = stress_initialize(LIVE_DB, BACKUP_ROOT)
+            else:
+                result = stress_apply(LIVE_DB, REFERENCE_DB, BACKUP_ROOT)
+        elif args.command == "reference":
             with connect_reference(REFERENCE_DB) as dictionary:
                 if args.reference_command == "info":
                     enabled = verify_schema(dictionary)

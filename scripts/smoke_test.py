@@ -94,19 +94,47 @@ def check_public_search(anonymous, queries, connections) -> None:
         "Hidden entries excluded from default search",
     )
 
-    fixtures = json.loads((PROJECT_ROOT / "tests" / "v3_search_fixtures.json").read_text())
-    if current_count != 1710:
-        print("SKIP original v3 search fixtures: installed dictionary count differs")
+    # Validate current database behavior, not the historical state of v3.
+    # An unchanged total lexeme count is not a dataset identity checksum:
+    # human edits to visibility/senses legitimately change results and ranking.
+    visible_count = queries.legacy_rows(
+        "SELECT COUNT(*) AS n FROM lexemes WHERE human_status != 'hidden'"
+    )[0]["n"]
+    current = queries.search(QueryDict(""))
+    check(current["total"] == visible_count,
+          "Default search reflects current visible entries")
+    check([item["id"] for item in current["items"]]
+          == sorted(item["id"] for item in current["items"]),
+          "Unfiltered results have stable lexeme-ID order")
+    for search_term in ("read", "write", "book", "читать", "замок"):
+        params = QueryDict("", mutable=True)
+        params["q"] = search_term
+        first = queries.search(params)
+        second = queries.search(params)
+        check(first == second, f"Search ranking deterministic for {search_term!r}")
+        check(first["total"] >= len(first["items"]),
+              f"Search paging total valid for {search_term!r}")
+        check(all(item["human_status"] != "hidden" for item in first["items"]),
+              f"Search excludes hidden entries for {search_term!r}")
+
+    # Historical parity requires the identical original v3 corpus, including
+    # senses and review decisions. The live 1,710-row dictionary is mutable.
+    # Keep the fixture as an explicit opt-in regression for a known v3 snapshot.
+    if os.environ.get("RUSLEX_TEST_V3_PARITY") != "1":
+        print("SKIP historical v3 fixture parity (opt-in only on original v3 snapshot)")
         return
 
+    fixtures = json.loads((PROJECT_ROOT / "tests" / "v3_search_fixtures.json").read_text())
     for query, expected in fixtures.items():
         params = QueryDict("", mutable=True)
         params["q"] = query
         result = queries.search(params)
+        actual_ids = [entry["id"] for entry in result["items"][:15]]
         check(
-            result["total"] == expected["total"]
-            and [entry["id"] for entry in result["items"][:15]] == expected["ids"],
-            f"v3 search parity {query!r}",
+            result["total"] == expected["total"] and actual_ids == expected["ids"],
+            f"original v3 parity {query!r}: actual total={result['total']}, "
+            f"ids={actual_ids}; expected total={expected['total']}, "
+            f"ids={expected['ids']}",
         )
 
 
@@ -335,6 +363,56 @@ def check_editing_workflow(anonymous, editor) -> None:
     )
 
 
+def check_pronunciation(anonymous, reviewer, editor, connections) -> None:
+    """Exercise the new API on a migrated, disposable dictionary."""
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='lexeme_pronunciations'"
+        )
+        if cursor.fetchone() is None:
+            print("SKIP pronunciation API tests: source snapshot has no stress schema")
+            return
+
+    first = json_request(editor, "post", "/api/lexemes", {
+        "lemma": "пробаслово", "pos": "NOUN",
+    })
+    check(first.status_code == 201, "Create isolated pronunciation test entry")
+    word_id = first.json()["id"]
+    sense = json_request(editor, "post", f"/api/lexemes/{word_id}/senses", {
+        "meaning": "temporary pronunciation test",
+    })
+    check(sense.status_code == 201, "Create pronunciation test sense")
+    sid = sense.json()["id"]
+    url = f"/api/lexemes/{word_id}/pronunciations"
+    payload = {"stressed": "про́баслово", "is_primary": True, "sense_ids": [sid]}
+    denied = json_request(reviewer, "post", url, payload)
+    check(denied.status_code == 403, "Reviewers cannot modify pronunciation")
+    denied = json_request(anonymous, "post", url, payload)
+    check(denied.status_code == 403, "Anonymous pronunciation editing denied")
+    bad = json_request(editor, "post", url, {
+        "stressed": "друго́еслово", "is_primary": True,
+    })
+    check(bad.status_code == 400, "Pronunciation cannot change lexical identity")
+    added = json_request(editor, "post", url, payload)
+    check(added.status_code == 201, "Editor can add stressed headword")
+    reading_id = added.json()["id"]
+    detail = anonymous.get(f"/api/lexemes/{word_id}").json()
+    check(detail["stressed_lemma"] == "про́баслово",
+          "Public entry displays selected stressed reading")
+    check(detail["pronunciations"][0]["sense_ids"] == [sid],
+          "Reading is attached to the correct sense")
+    updated = json_request(editor, "put", f"{url}/{reading_id}", {
+        "stressed": "проба́слово", "is_primary": True, "sense_ids": [],
+    })
+    check(updated.status_code == 200, "Editor can correct stress")
+    check(anonymous.get(f"/api/lexemes/{word_id}").json()["stressed_lemma"]
+          == "проба́слово", "Corrected pronunciation is shown")
+    deleted = json_request(editor, "delete", f"{url}/{reading_id}", {})
+    check(deleted.status_code == 200, "Editor can remove pronunciation")
+    check(anonymous.get(f"/api/lexemes/{word_id}").json()["stressed_lemma"]
+          == "пробаслово", "No reading falls back to original lemma")
+
+
 def check_signup(anonymous, User, SiteOptions) -> None:
     SiteOptions.objects.filter(pk=1).update(registration_open=True)
     signup = json_request(
@@ -358,7 +436,7 @@ def main() -> None:
         (temp_root / "lexicon").mkdir()
         (temp_root / "admin").mkdir()
 
-        source = Path(os.environ.get("DATA_DIR", "/data")) / "lexicon" / "lexicon.db"
+        source = Path(os.environ.get("RUSLEX_SMOKE_LEXICON_SOURCE") or (Path(os.environ.get("DATA_DIR", "/data")) / "lexicon" / "lexicon.db"))
         copy_database(source, temp_root / "lexicon" / "lexicon.db")
         os.environ["DATA_DIR"] = str(temp_root)
         os.environ["DJANGO_ALLOWED_HOSTS"] = "testserver,localhost"
@@ -401,6 +479,7 @@ def main() -> None:
         check_bad_input(editor)
         check_existing_tag_reuse(anonymous, editor, connections)
         check_editing_workflow(anonymous, editor)
+        check_pronunciation(anonymous, reviewer, editor, connections)
         check_signup(anonymous, User, SiteOptions)
         print("ALL DJANGO SMOKE TESTS PASSED; live databases were not touched")
 

@@ -51,6 +51,7 @@ export interface Page<T> {
 export interface Summary {
   id: number;
   lemma: string;
+  stressed_lemma?: string;
   pos: string;
   entry_type: string;
   aspect: string | null;
@@ -62,7 +63,7 @@ export interface Summary {
 }
 
 /** Enough information to select an entry without inventing a full Summary object. */
-export type EntryReference = Pick<Summary, 'id' | 'lemma' | 'pos'>;
+export type EntryReference = Pick<Summary, 'id' | 'lemma' | 'pos'> & Partial<Pick<Summary, 'stressed_lemma'>>;
 
 export interface Example {
   id: number;
@@ -137,7 +138,18 @@ export interface Source {
   count?: number;
 }
 
+export interface Pronunciation {
+  id: number;
+  lexeme_id: number;
+  stressed: string;
+  source: string;
+  verification: 'source_backed' | 'verified' | 'disputed';
+  is_primary: boolean;
+  sense_ids: number[];
+}
+
 export interface Entry extends Summary {
+  pronunciations: Pronunciation[];
   notes: string;
   created_at: string;
   senses: Sense[];

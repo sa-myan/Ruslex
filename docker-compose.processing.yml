@@ -2,7 +2,7 @@
 # no proxy network, no always-running workers.
 name: ruslex-processing
 x-processing: &processing
-  image: ruslex-processing:local
+  image: "${PROCESSING_IMAGE:-ruslex-processing:local}"
   build:
     context: .
     dockerfile: Dockerfile.processing
@@ -27,6 +27,16 @@ services:
       - "${DATA_ROOT}/lexicon:/live:ro"
       - "${DATA_ROOT}/backups:/backups:ro"
       - "${DATA_ROOT}/processing/state:/state"
+  rehearsal:
+    <<: *processing
+    # Disposable stress tests: no network, no AI credentials, no live writes.
+    network_mode: none
+    volumes:
+      - "${DATA_ROOT}/processing:/work"
+      - "${DATA_ROOT}/reference:/reference:ro"
+      - "${DATA_ROOT}/lexicon:/live:ro"
+      - "${DATA_ROOT}/backups:/backups:ro"
+
   promoter:
     <<: *processing
     # No network or model credentials during the only operation writing live.
@@ -34,13 +44,14 @@ services:
     volumes:
       - "${DATA_ROOT}/processing:/work"
       - "${DATA_ROOT}/ocr:/ocr:ro"
+      - "${DATA_ROOT}/reference:/reference:ro"
       - "${DATA_ROOT}/lexicon:/live"
       - "${DATA_ROOT}/backups:/backups"
 
   state-init:
     # Run only when OpenCode state needs initialization or repair.
     # Root can repair the processing directory and private OpenCode state only.
-    image: ruslex-processing:local
+    image: "${PROCESSING_IMAGE:-ruslex-processing:local}"
     build:
       context: .
       dockerfile: Dockerfile.processing

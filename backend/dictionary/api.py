@@ -16,7 +16,7 @@ from django.views.decorators.http import require_http_methods
 
 from accounts.api import has_edit, has_review
 
-from . import queries, services
+from . import queries, services, pronunciation
 from .catalog import ANIMACIES, ASPECTS, PARTS_OF_SPEECH, RELATIONS
 
 
@@ -209,6 +209,21 @@ def ref_pages(request, word_id: int):
         return respond({"detail": "Entry not available"}, 404)
     page, size = paging(request)
     return respond(queries.reference_pages(word_id, page, size))
+
+
+@api_errors
+@require_http_methods(["POST", "PUT", "DELETE"])
+def pronunciation_records(request, word_id: int, record_id: int | None = None):
+    denied = require(request, "edit")
+    if denied is not None:
+        return denied
+    if request.method == "DELETE":
+        if record_id is None:
+            raise services.BadRequest("Pronunciation ID required")
+        return respond(pronunciation.remove(word_id, record_id))
+    _validate_collection_url(request, record_id, "pronunciation")
+    return respond(pronunciation.save(word_id, data(request), record_id),
+                   201 if record_id is None else 200)
 
 
 def edit_allowed(request):

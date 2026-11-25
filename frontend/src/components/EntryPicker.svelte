@@ -74,7 +74,7 @@
 
 {#if selected}
   <div class="flex items-center gap-2">
-    <strong class="russian">{selected.lemma}</strong>
+    <strong class="russian">{selected.stressed_lemma ?? selected.lemma}</strong>
     <span class="badge badge-sm">{selected.pos}</span>
     <button type="button" class="btn btn-xs btn-ghost" onclick={() => choose(null)}>
       Change ×
@@ -97,7 +97,7 @@
         class="block p-2 w-full text-left hover:bg-base-200"
         onclick={() => choose(result)}
       >
-        <span class="russian font-semibold">{result.lemma}</span>
+        <span class="russian font-semibold">{result.stressed_lemma ?? result.lemma}</span>
         <small>{result.pos} · {result.gloss_preview}</small>
       </button>
     {/each}

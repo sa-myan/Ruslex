@@ -14,6 +14,7 @@ inside a web request.
 | Import Mistral OCR, classify words, enrich, promote data | [Book processing](docs/BOOK_PROCESSING.md) |
 | Back up, restore, disable, troubleshoot | [Operations](docs/OPERATIONS.md) |
 | Understand code and data ownership | [Architecture](docs/ARCHITECTURE.md) |
+| Review stress and ё migration | [Pronunciation](docs/PRONUNCIATION.md) |
 | Run verification and tests | [Tests](docs/TESTS.md) |
 | Understand general Ubuntu/Docker hosting beyond Ruslex | [Reusable VPS guide](docs/VPS_WORKFLOW.md) |
 
@@ -58,3 +59,5 @@ With your own old OpenRussian SQLite dump mounted at
 `/srv/data/ruslex/reference/openrussian.db`, use
 `./process.sh reference lookup читать` or `./process.sh reference audit`.
 See `docs/OPENRUSSIAN.md`; this never modifies the live lexicon.
+The separate `./process.sh stress` commands handle reviewed schema migration
+and source-backed headword backfill. See `docs/PRONUNCIATION.md`.

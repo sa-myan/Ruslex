@@ -81,9 +81,10 @@ Stress is converted from the old OpenRussian trailing-apostrophe convention
 to Unicode combining acute U+0301. Ё is preserved as an actual letter.
 Ambiguous or malformed source records require review.
 
-For actual stress storage and promotion, we will need a separate versioned
-schema migration, verification UI and provenance safeguards; these CSVs
-are **suggestions**, not a database migration.
+Actual stress storage and a conservative backfill are implemented separately
+through `./process.sh stress` and the entry editor. See
+[PRONUNCIATION.md](PRONUNCIATION.md). CSVs remain **suggestions**, not
+a database migration.
 
 ## Licensing
 

@@ -7,6 +7,7 @@
   import type { Entry as DictionaryEntry, Metadata, Status, Tag } from '../lib/types';
 
   import EntryIdentityForm from '../components/entry/EntryIdentityForm.svelte';
+  import PronunciationEditor from '../components/entry/PronunciationEditor.svelte';
   import ExpressionComponents from '../components/entry/ExpressionComponents.svelte';
   import ExternalLinks from '../components/entry/ExternalLinks.svelte';
   import SenseCard from '../components/SenseCard.svelte';
@@ -144,7 +145,7 @@
   <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
     <div>
       <p class="kicker">{entry.entry_type === 'expression' ? 'Expression' : 'Dictionary entry'}</p>
-      <h2 class="text-3xl md:text-4xl russian font-bold mt-2">{entry.lemma}</h2>
+      <h2 class="text-3xl md:text-4xl russian font-bold mt-2">{entry.stressed_lemma ?? entry.lemma}</h2>
       <div class="flex flex-wrap gap-2 mt-3">
         <span class="badge badge-neutral">{entry.pos}</span>
         {#if entry.aspect}<span class="badge badge-outline">{entry.aspect}</span>{/if}
@@ -164,6 +165,10 @@
       {/if}
     </div>
   </div>
+
+  {#if $editMode && entry.entry_type === 'word'}
+    <PronunciationEditor {entry} {refresh} />
+  {/if}
 
   {#if isEditingIdentity && $editMode}
     <EntryIdentityForm
