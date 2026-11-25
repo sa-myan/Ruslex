@@ -13,7 +13,7 @@ from .enrichment_merge import apply_enrichment
 from .forms import resolve
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan as promotion_plan, promote, workspace_paths
-from .storage import atomic_json, prepare, read_database, write_database, staged_files
+from .storage import atomic_json, prepare, read_database, write_database, staged_files, inputs, checked_workspace, new_word_ids
 from .workflow import run as enrich_run
 
 SETTINGS_FILE = "book-run-settings.json"
@@ -61,6 +61,17 @@ def _settings(workspace: Path, *, book: str, model: str, verify_model: str | Non
     return record
 
 
+def _select_new_words(workspace: Path) -> list[int]:
+    """New admitted words only, never existing hidden or manually curated data."""
+    with read_database(workspace / "baseline.db") as base, read_database(workspace / "candidate.db") as candidate:
+        old = {row[0] for row in base.execute("SELECT id FROM lexemes")}
+        return [
+            row[0] for row in candidate.execute(
+                "SELECT id FROM lexemes WHERE entry_type='word' AND human_status!='hidden' ORDER BY id"
+            ) if row[0] not in old
+        ]
+
+
 def advance(live: Path, workspace: Path, *, book: str, model: str,
             verify_model: str | None = None, expressions: bool = True,
             max_batches: int | None = None, timeout: int = 300,
@@ -98,6 +109,9 @@ def advance(live: Path, workspace: Path, *, book: str, model: str,
 
     stage = workspace / "enrichment"
     if not (stage / "manifest.json").exists():
+        # Freeze the new-word selection before enrichment's immutable snapshot.
+        stage.mkdir(parents=True, exist_ok=True)
+        atomic_json(stage / "new_lexemes.json", _select_new_words(workspace))
         prepared = prepare(workspace / "candidate.db", stage)
     else:
         prepared = None
@@ -119,7 +133,14 @@ def advance(live: Path, workspace: Path, *, book: str, model: str,
 
     if not (workspace / "enrichment_review.json").is_file():
         any_staged = any(staged_files(stage, name) for name in ("lexemes", "pages"))
-        applied = apply_enrichment(workspace) if any_staged else {"nothing_to_enrich": True}
+        if any_staged:
+            applied = apply_enrichment(workspace)
+        else:
+            applied = {"nothing_to_enrich": True}
+            atomic_json(workspace / "enrichment_review.json", {
+                "statistics": applied, "unapplied_relationships": [],
+                "component_words_for_followup": []
+            })
     else:
         applied = {"already_applied": True}
 
@@ -144,7 +165,10 @@ def finalize(live: Path, workspace: Path, backups: Path, *, confirmed: bool) -> 
         source = checked_workspace(stage)
         config = json.loads(settings.read_text(encoding="utf-8"))
         with read_database(source) as db:
-            expected = sum(1 for _ in inputs(db, "lexemes", book=config["book"]))
+            expected = sum(1 for _ in inputs(
+                db, "lexemes", book=config["book"],
+                allow_new_ids=new_word_ids(stage)
+            ))
             expected += (sum(1 for _ in inputs(db, "pages", book=config["book"]))
                          if config["expressions"] else 0)
         if expected:
