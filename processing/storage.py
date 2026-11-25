@@ -171,9 +171,14 @@ def prepare(db_path: Path, workspace: Path):
         if db.execute("PRAGMA journal_mode").fetchone()[0].lower() != "delete":
             raise RuntimeError("Sealed snapshot is not using DELETE journaling")
     counts = inventory(dest)
+    selection = workspace / "new_lexemes.json"
     manifest = {"snapshot_sha256": hashlib.sha256(dest.read_bytes()).hexdigest(),
                 "taxonomy_version": TAXONOMY_VERSION, "source": str(db_path.resolve()),
-                "counts": counts}
+                "counts": counts,
+                "new_lexemes_sha256": (
+                    hashlib.sha256(selection.read_bytes()).hexdigest()
+                    if selection.exists() else None
+                )}
     atomic_json(workspace / "manifest.json", manifest)
     return manifest
 
@@ -189,6 +194,12 @@ def checked_workspace(workspace: Path) -> Path:
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     if digest != record.get("snapshot_sha256"):
         raise RuntimeError("Source snapshot was modified; refusing to continue")
+    selection = workspace / "new_lexemes.json"
+    expected_selection = record.get("new_lexemes_sha256")
+    actual_selection = (hashlib.sha256(selection.read_bytes()).hexdigest()
+                        if selection.exists() else None)
+    if actual_selection != expected_selection:
+        raise RuntimeError("Selected new words changed since enrichment preparation")
     return source
 
 
