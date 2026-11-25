@@ -22,19 +22,31 @@ retain a misleading OpenRussian provenance reference.
 
 **Do not deploy this experimental branch to production as-is.**
 First test the branch against a disposable snapshot, and run the offline
-regression suite, Django checks and frontend build. From the checked-out
-feature branch, all pre-deployment checks are available in one command:
+regression suite, Django checks and frontend build. Keep your production checkout on `main`. To test the feature without
+switching branches in the production checkout, make a separate Git worktree:
+
+~~~sh
+cd /srv/apps/ruslex
+git fetch origin
+git worktree add --detach /srv/apps/ruslex-pronunciation origin/feat/headword-pronunciation-foundation
+ln -s /srv/apps/ruslex/.env /srv/apps/ruslex-pronunciation/.env
+cd /srv/apps/ruslex-pronunciation
+~~~
+
+From that isolated checkout, all pre-deployment checks are available in one command:
 
 ~~~sh
 sh scripts/verify_pronunciation.sh
 ~~~
 
-The script builds images but does **not** recreate the web container or write
-to the live lexicon. It runs offline unit tests, the Svelte type/build check,
+The script uses *separate test-only web and processing image tags*; it does
+**not** recreate or retag the production web container/image, or write to the
+live lexicon. It runs offline unit tests, the Svelte type/build check,
 Django's existing copy-based smoke tests, and a complete stress init/backfill
 rehearsal using an independently snapshotted SQLite database under
-`/srv/data/ruslex/processing/stress_rehearsals`. The rehearsal fails on
-integrity errors, changed legacy record counts or non-idempotent backfill.
+`/srv/data/ruslex/processing/stress_rehearsals`. The rehearsal runs with no network and no AI-credential mount, with the live
+lexicon mounted read-only. It fails on integrity errors, changed legacy
+record counts or non-idempotent backfill.
 
 
 On the VPS, after the PR has been reviewed and merged, and after a normal
