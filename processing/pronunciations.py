@@ -196,3 +196,51 @@ def backfill_new_lexemes(db: sqlite3.Connection, reference: Path,
         )
         inserted += 1
     return inserted
+
+
+def rehearse(live: Path, reference: Path, workspace_root: Path) -> dict:
+    """Test schema and backfill on a fresh consistent copy; never write live.
+
+    Runs as the ordinary unprivileged worker, where /live and /reference are
+    read-only. No network, user credentials, or production mutation needed.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    root = workspace_root / "stress_rehearsals" / stamp
+    root.mkdir(parents=True, exist_ok=False)
+    copy = root / "lexicon.db"
+    snapshot(live, copy)
+    with read_database(live) as db:
+        original_counts = {
+            table: db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+            for table in ("lexemes", "senses", "lexeme_relations", "lexeme_pages")
+        }
+    before = backfill_plan(copy, reference)
+    migration = initialize(copy, root / "backups")
+    after_install = backfill_plan(copy, reference)
+    first = apply_backfill(copy, reference, root / "backups")
+    second = apply_backfill(copy, reference, root / "backups")
+    with read_database(copy) as db:
+        _check(db)
+        after_counts = {
+            table: db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+            for table in original_counts
+        }
+        total_readings = db.execute(
+            "SELECT COUNT(*) FROM lexeme_pronunciations"
+        ).fetchone()[0]
+    if after_counts != original_counts or second["inserted"]:
+        raise RuntimeError("Rehearsal failed: existing data changed or backfill was not idempotent")
+    if before["safe_new_pronunciations"] != first["inserted"]:
+        raise RuntimeError("Rehearsal failed: backfill differs from read-only plan")
+    return {
+        "success": True,
+        "production_modified": False,
+        "rehearsal_path": str(root),
+        "before": before,
+        "schema": migration,
+        "after_install": after_install,
+        "inserted": first["inserted"],
+        "second_pass_inserted": second["inserted"],
+        "total_pronunciations": total_readings,
+        "existing_data_counts_unchanged": True,
+    }
