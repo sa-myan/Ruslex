@@ -281,6 +281,20 @@ def analyze(live: Path, reference: Path, work_root: Path, *, name: str,
     if file.exists():
         saved = json.loads(file.read_text(encoding="utf-8"))
         if saved != manifest:
+            # A provider failure may leave only the initial manifest. Such an
+            # empty run has no model decisions to corrupt: changing model IDs
+            # or batch size is safe provided the evidence is unchanged.
+            # Preserve old manifests when even one successful batch exists.
+            has_completed = any((root / "batches").glob("*.json"))
+            same_evidence = (
+                saved.get("case_hash") == manifest["case_hash"]
+                and saved.get("reference_sha256") == manifest["reference_sha256"]
+                and saved.get("book") == manifest["book"]
+            )
+            if not has_completed and same_evidence and not dry_run:
+                atomic_json(file, manifest)
+                saved = manifest
+        if saved != manifest:
             differences = []
             for key in ("model", "verify_model", "batch_size", "book"):
                 if saved.get(key) != manifest.get(key):
