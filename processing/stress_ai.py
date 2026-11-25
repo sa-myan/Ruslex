@@ -202,11 +202,11 @@ def _ask_validated(prompt: str, *, model: str, batch: list[dict],
                     f"validation after three attempts: {exc}"
                 ) from exc
             current_prompt = (
-                prompt + "\\n\\nVALIDATION REPAIR: The previous JSON was rejected: "
+                prompt + "\n\nVALIDATION REPAIR: The previous JSON was rejected: "
                 + str(exc)
-                + "\\nReturn the COMPLETE corrected JSON for exactly the same IDs, "
+                + "\nReturn the COMPLETE corrected JSON for exactly the same IDs, "
                   "with all required fields. Do not add new headwords or sources."
-                + "\\nPREVIOUS RESPONSE:\\n"
+                + "\nPREVIOUS RESPONSE:\n"
                 + json.dumps(response, ensure_ascii=False)[:12000]
             )
     raise AssertionError("Unreachable")
