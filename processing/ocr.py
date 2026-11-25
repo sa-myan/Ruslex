@@ -12,7 +12,7 @@ import zipfile
 from collections import Counter
 from pathlib import Path
 
-from .abbreviations import KNOWN_ABBREVIATIONS, DOTTED_ABBREVIATIONS
+from .abbreviations import KNOWN_ABBREVIATIONS, DOTTED_ABBREVIATIONS, uppercase_in_running_text
 
 WORD = re.compile(r"(?<![\w])([А-Яа-яЁё](?:[А-Яа-яЁё\u0301\u0300]|[-‑](?=[А-Яа-яЁё]))*)(?![\w])")
 PAGE_MARKER = re.compile(r"(?im)^\s*<!--\s*page\s*:\s*(\d+)\s*-->\s*$")
@@ -211,6 +211,12 @@ def parse_forms(surface: str, analyzer, *, uppercase_hint: bool = False) -> list
     """Keep alternate analyses for AI disambiguation, not a single guess."""
     seen = set()
     result = []
+    analyses = list(analyzer.parse(surface))
+    known_word = any(
+        bool(getattr(item, "is_known", False))
+        and normalize(item.normal_form) == normalize(surface)
+        for item in analyses
+    )
     # Known lexical abbreviations are not always parseable by pymorphy.
     # Offer a classification option to the LLM, never infer from uppercase
     # textbook headings or unfamiliar OCR tokens alone.
@@ -218,7 +224,8 @@ def parse_forms(surface: str, analyzer, *, uppercase_hint: bool = False) -> list
         return [{"lemma": surface, "pos": "OTHER", "known": True,
                  "entry_type": "abbreviation",
                  "abbreviation_evidence": "known_written_abbreviation"}]
-    if surface in KNOWN_ABBREVIATIONS or uppercase_hint or (
+    if (surface in KNOWN_ABBREVIATIONS or
+        (uppercase_hint and not known_word) or
         NUMBERED_ACRONYM.fullmatch(surface.upper()) is not None
     ):
         result.append({"lemma": surface, "pos": "NOUN",
@@ -227,7 +234,7 @@ def parse_forms(surface: str, analyzer, *, uppercase_hint: bool = False) -> list
                        "abbreviation_evidence": "recognized_lexical_abbreviation"
                            if surface in KNOWN_ABBREVIATIONS else "uppercase_context_only"})
         seen.add((surface, "NOUN", "abbreviation"))
-    for analysis in analyzer.parse(surface):
+    for analysis in analyses:
         lemma = normalize(analysis.normal_form)
         raw_pos = str(analysis.tag.POS or "UNKNOWN")
         pos = POS_MAP.get(raw_pos, raw_pos)
@@ -263,6 +270,18 @@ def import_book(db, *, title: str, edition: str, source: Path,
                          (title, edition)).fetchone()[0]
     counts = {"pages_added": 0, "pages_skipped": 0, "new_forms_for_AI": 0,
               "book_id": book_id}
+    # Discover useful uppercase spellings before caching per-surface analyses:
+    # otherwise a later page cannot contribute evidence to a cached analysis.
+    abbreviation_hints = set()
+    for _, markdown in selected:
+        possible = {
+            candidate for candidate in re.findall(
+                r"(?<![А-Яа-яЁё])([А-ЯЁ]{2,9})(?![А-Яа-яЁё])", markdown
+            )
+        }
+        for candidate in possible:
+            if uppercase_in_running_text(markdown, candidate):
+                abbreviation_hints.add(normalize(candidate))
     parsed = {}
     for physical, markdown in selected:
         existing = db.execute("SELECT markdown FROM pages WHERE book_id=? AND pdf_page=?",
@@ -275,16 +294,8 @@ def import_book(db, *, title: str, edition: str, source: Path,
         tokens = tokenize(markdown)
         frequencies = Counter(form for form, _ in tokens)
         contexts = {}
-        abbreviation_hints = set()
         for form, context in tokens:
             contexts.setdefault(form, context)
-            # Uppercase is a *candidate hint* only; the LLM still checks
-            # surrounding text and may decline admission.
-            if 2 <= len(form) <= 9 and re.search(
-                r"(?<![А-Яа-яЁё])" + re.escape(form.upper()) + r"(?![А-Яа-яЁё])",
-                context,
-            ):
-                abbreviation_hints.add(form)
         with db:
             page_id = db.execute(
                 "INSERT INTO pages(book_id,pdf_page,printed_page,markdown,source) VALUES(?,?,?,?,?)",
