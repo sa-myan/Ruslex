@@ -2,7 +2,7 @@
 # no proxy network, no always-running workers.
 name: ruslex-processing
 x-processing: &processing
-  image: ruslex-processing:local
+  image: "${PROCESSING_IMAGE:-ruslex-processing:local}"
   build:
     context: .
     dockerfile: Dockerfile.processing
@@ -51,7 +51,7 @@ services:
   state-init:
     # Run only when OpenCode state needs initialization or repair.
     # Root can repair the processing directory and private OpenCode state only.
-    image: ruslex-processing:local
+    image: "${PROCESSING_IMAGE:-ruslex-processing:local}"
     build:
       context: .
       dockerfile: Dockerfile.processing
