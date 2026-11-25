@@ -74,7 +74,12 @@ def _summaries(rows: list[dict], limit_per_pair: int = 3) -> dict:
     ]
     return {
         "unresolved_count": len(rows),
-        "blocked": dict(sorted(Counter(row["backfill_blocker"] for row in rows).items())),
+        "blocked": dict(sorted(Counter(
+            row["backfill_blocker"] for row in rows if row["backfill_blocker"]
+        ).items())),
+        "eligible_for_import": dict(sorted(Counter(
+            row["backfill_method"] for row in rows if row["backfill_method"]
+        ).items())),
         "pos_mismatch_pairs": pair_summaries,
         "ambiguous": [
             {key: r[key] for key in ("lemma", "ruslex_pos", "stress_candidates",
@@ -162,6 +167,7 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
         "stored_pronunciations": len(existing),
         "unresolved": len(cases),
         "blocked": overview["blocked"],
+        "eligible_for_import": overview["eligible_for_import"],
         "coverage_pct": round(100 * len(existing) / len(active_ids), 1)
         if active_ids else 100.0,
     }
@@ -184,6 +190,7 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
         "reference_sha256": fingerprint,
         "report": str(report),
         "blocked": overview["blocked"],
+        "eligible_for_import": overview["eligible_for_import"],
         "pos_mismatch_pairs": [
             {**row, "examples": row["examples"][:2]}
             for row in overview["pos_mismatch_pairs"][:18]
