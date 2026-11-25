@@ -128,3 +128,25 @@ No public write action is allowed without the existing edit permission.
   on a **disposable database copy** before applying to production.
 - OpenRussian has attribution/share-alike license obligations (CC BY-SA 4.0);
   check how those apply to the intended publication of derived readings.
+
+## Diagnose the unresolved headwords (read-only)
+
+After the initial source-backed import, run:
+
+~~~sh
+./process.sh stress diagnose
+~~~
+
+The isolated `rehearsal` service has no network, and mounts live SQLite and
+OpenRussian read-only. The command writes a JSON diagnostic to
+`$DATA_ROOT/processing/stress_diagnostics/<timestamp>/unresolved_headwords.json`.
+It contains all headwords without stored pronunciations, grouped POS mismatch
+counts (Ruslex POS vs. OpenRussian `type`), selected Russian/English glosses,
+ambiguous readings, ё disagreements, reference warnings, and sample entries
+missing from the source. The terminal output is intentionally shorter.
+
+This command **does not** change matching rules or import any readings.
+`other`, `expression` and mismatching known POS values remain unresolved
+until there is concrete evidence that a proposed rule is linguistically safe.
+The diagnostic does not send material to an LLM or require an API key.
+
