@@ -12,7 +12,8 @@ from .models import (
     Example, ExpressionComponent, ExternalLink, Lexeme, Pattern, Relation, Sense,
 )
 from .query_helpers import LEXICON, legacy_rows, one, tags_for_senses
-from .pronunciation import pronunciations_for, display_lemma, sense_ids_for
+from .pronunciation import pronunciations_for, display_lemma
+from .abbreviation_display import display as display_abbreviation, sense_ids_for
 from .inflections import for_entry as inflected_forms
 
 
@@ -210,7 +211,8 @@ def detail(word_id: int, *, private_notes: bool = False) -> dict:
     return {
         "id": entry.id,
         "lemma": entry.lemma,
-        "stressed_lemma": display_lemma(entry.lemma, readings),
+        "stressed_lemma": display_abbreviation(entry.lemma, entry.entry_type,
+                                                  display_lemma(entry.lemma, readings)),
         "pronunciations": readings,
         "word_forms": inflected_forms(word_id) if entry.entry_type in ("word", "abbreviation") else [],
         "pos": entry.pos,
