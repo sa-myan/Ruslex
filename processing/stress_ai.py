@@ -372,6 +372,16 @@ def plan(live: Path, reference: Path, work_root: Path, name: str) -> dict:
                  "reason": x["first"]["reason"]}
                 for x in results if x["auto_eligible"]
             ],
+            "manual_approvable": [
+                {"id": x["id"], "lemma": by_id[x["id"]]["lemma"],
+                 "action": x["first"]["action"],
+                 "reading": x["first"]["reading"],
+                 "reference_id": x["first"]["reference_id"],
+                 "sense_ids": x["first"]["sense_ids"],
+                 "reason": x["first"]["reason"]}
+                for x in results
+                if not x["auto_eligible"] and x["first"]["action"] in ("select", "suggest")
+            ],
             "review_preview": [
                 {"id": x["id"], "lemma": by_id[x["id"]]["lemma"],
                  "senses": by_id[x["id"]]["senses"],
@@ -383,18 +393,46 @@ def plan(live: Path, reference: Path, work_root: Path, name: str) -> dict:
             "data_mutation": "none"}
 
 
+def parse_approval_ids(value: str | None) -> set[int]:
+    if not value:
+        return set()
+    tokens = [item.strip() for item in value.split(",")]
+    if any(not token.isdecimal() or not token.isascii() or int(token) < 1
+           for token in tokens):
+        raise ValueError("Use comma-separated positive decimal lexeme IDs")
+    ids = [int(token) for token in tokens]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Duplicate lexeme ID in approvals")
+    return set(ids)
+
 def apply(live: Path, reference: Path, work_root: Path, backups: Path,
-          name: str) -> dict:
-    # The worker's decisions are untrusted; validate and reconstruct evidence
-    # in an isolated offline promoter before any database writes.
+          name: str, approved_ids: set[int] | None = None) -> dict:
+    """Apply validated unanimous AI choices or individually approved proposals.
+
+    Only a human's explicit ID selection can promote a single-model decision
+    or an unsupported model suggestion. Never modify existing pronunciations.
+    """
     previous = plan(live, reference, work_root, name)
-    if not previous["auto_eligible"]:
-        return {**previous, "inserted": 0}
+    approved = approved_ids or set()
+    eligible_ids = {row["id"] for row in previous["automatic_preview"]}
+    approvable_ids = {row["id"] for row in previous["manual_approvable"]}
+    unsupported = approved - (eligible_ids | approvable_ids)
+    if unsupported:
+        raise ValueError(
+            f"IDs were not actionable AI proposals: {sorted(unsupported)}"
+        )
+    if approved and previous["remaining"]:
+        raise RuntimeError(
+            "Finish the AI analysis before manually approving a batch: "
+            f"{previous['remaining']} cases remain"
+        )
+    if not previous["auto_eligible"] and not approved:
+        return {**previous, "inserted": 0, "manually_approved": 0,
+                "data_mutation": "none"}
     backup = _backup(live, backups, "ai-headwords")
     root = _directory(work_root, name)
     with connect_reference(reference) as ref, write_database(live) as db:
         db.execute("BEGIN IMMEDIATE")
-        # Recheck under the write lock, including source/meaning changes.
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
         cases, fingerprint = evidence(live, reference, work_root,
                                       book=manifest.get("book"))
@@ -407,33 +445,51 @@ def apply(live: Path, reference: Path, work_root: Path, backups: Path,
         cases_by_id = {c["id"]: c for c in cases}
         source_words = {word.word_id: word for word in word_rows(ref)}
         inserted = 0
+        manually_approved = 0
         for row in results:
-            if not row["auto_eligible"]:
+            manually_selected = row["id"] in approved
+            if not row["auto_eligible"] and not manually_selected:
                 continue
             case = cases_by_id[row["id"]]
             first = row["first"]
-            reference_word = source_words.get(first["reference_id"])
-            if (not reference_word or reference_word.warnings or
-                    match_capitalization(reference_word.stressed, case["lemma"])
-                    != first["reading"]):
-                raise RuntimeError("Source reading no longer matches proposal")
-            present = db.execute(
+            if first["action"] == "select":
+                reference_word = source_words.get(first["reference_id"])
+                if (not reference_word or reference_word.warnings or
+                        match_capitalization(reference_word.stressed, case["lemma"])
+                        != first["reading"]):
+                    raise RuntimeError("Source reading no longer matches proposal")
+                source_kind = "openrussian"
+                reference_id = first["reference_id"]
+                source_hash = fingerprint
+            elif manually_selected and first["action"] == "suggest":
+                # Missing-source AI output is not external lexical evidence.
+                source_kind = "manual"
+                reference_id = ""
+                source_hash = ""
+            else:
+                raise RuntimeError("Attempted to apply a non-actionable proposal")
+            if db.execute(
                 "SELECT 1 FROM lexeme_pronunciations WHERE lexeme_id=?", (row["id"],)
-            ).fetchone()
-            if present:
+            ).fetchone():
                 continue
             cursor = db.execute(
                 """INSERT INTO lexeme_pronunciations
                    (lexeme_id,stressed,source,reference_id,reference_fingerprint,
                     verification,is_primary,created_at)
-                   VALUES (?,?,'openrussian',?,?,'source_backed',1,?)""",
-                (row["id"], first["reading"], first["reference_id"], fingerprint,
+                   VALUES (?,?,?,?,?,?,1,?)""",
+                (row["id"], first["reading"], source_kind, reference_id, source_hash,
+                 "verified" if manually_selected else "source_backed",
                  datetime.now(timezone.utc).isoformat()),
             )
             for sense_id in first["sense_ids"]:
-                db.execute("INSERT INTO sense_pronunciations(sense_id,pronunciation_id) VALUES (?,?)",
-                           (sense_id, cursor.lastrowid))
+                db.execute(
+                    "INSERT INTO sense_pronunciations(sense_id,pronunciation_id) "
+                    "VALUES (?,?)", (sense_id, cursor.lastrowid)
+                )
             inserted += 1
+            if manually_selected:
+                manually_approved += 1
         _check(db)
-    return {**previous, "inserted": inserted, "backup": str(backup),
+    return {**previous, "inserted": inserted,
+            "manually_approved": manually_approved, "backup": str(backup),
             "data_mutation": "pronunciations_inserted" if inserted else "none"}
