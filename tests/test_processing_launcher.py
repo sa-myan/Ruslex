@@ -75,6 +75,28 @@ class ProcessingLauncherTest(unittest.TestCase):
         self.assertEqual(len(self.log_lines()), 1)
         self.assertIn("state-init", self.log_lines()[0])
 
+    def test_stress_read_only_approval_plan_reaches_rehearsal(self):
+        result = self.run_command(
+            "stress", "ai-approval-plan", "stress43_trial2", "--approve", "21,93"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log_lines(), [
+            "compose -f docker-compose.processing.yml run --rm --no-deps "
+            "rehearsal python -m processing.cli stress ai-approval-plan "
+            "stress43_trial2 --approve 21,93"
+        ])
+
+    def test_stress_apply_uses_promoter_not_worker(self):
+        result = self.run_command(
+            "stress", "ai-apply", "stress43_trial2", "--confirm", "--approve", "21,93"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log_lines(), [
+            "compose -f docker-compose.processing.yml run --rm --no-deps "
+            "promoter python -m processing.cli stress ai-apply "
+            "stress43_trial2 --confirm --approve 21,93"
+        ])
+
     def test_bad_uid_does_not_launch_docker(self):
         (self.project / ".env").write_text(
             f"DATA_ROOT={self.data}\nPUID=0\nPGID=1234\n"
