@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .storage import checked_workspace, read_database, staged_files, write_database, atomic_json
+from .storage import checked_workspace, read_database, staged_files, write_database, atomic_json, new_word_ids
 from .taxonomy import seed_tags
 from .validation import validate_lexemes, validate_pages, normalized
 from .workflow import find_or_add_word, insert_senses
@@ -16,8 +16,13 @@ from .workflow import find_or_add_word, insert_senses
 
 def _staged_lexemes(stage: Path, source: Path):
     with read_database(source) as db:
+        selected_new = new_word_ids(stage)
         known = {row["id"]: dict(row) for row in db.execute(
-            "SELECT id,lemma,pos FROM lexemes WHERE human_status='kept' AND entry_type='word'")}
+            "SELECT id,lemma,pos,human_status FROM lexemes WHERE entry_type='word' AND human_status!='hidden'")
+            if row["human_status"] == "kept" or row["id"] in selected_new}
+        unknown = selected_new - set(known)
+        if unknown:
+            raise RuntimeError(f"New enrichment word IDs are invalid or hidden: {sorted(unknown)}")
     entries = {}
     for path in staged_files(stage, "lexemes"):
         payload = json.loads(path.read_text(encoding="utf-8"))
