@@ -48,13 +48,13 @@ class OpenRussianTests(unittest.TestCase):
         with closing(sqlite3.connect(self.lexicon)) as db:
             db.executescript("""
                 CREATE TABLE lexemes(id INTEGER PRIMARY KEY,lemma TEXT,pos TEXT,entry_type TEXT, human_status TEXT NOT NULL DEFAULT 'unreviewed');
-                INSERT INTO lexemes VALUES(1,'замок','NOUN','word');
-                INSERT INTO lexemes VALUES(2,'елка','NOUN','word');
-                INSERT INTO lexemes VALUES(3,'читать','VERB','word');
-                INSERT INTO lexemes VALUES(4,'все','NPRO','word');
-                INSERT INTO lexemes VALUES(5,'молоко','NOUN','word');
-                INSERT INTO lexemes VALUES(6,'нетвсловаре','NOUN','word');
-                INSERT INTO lexemes VALUES(7,'выражение','OTHER','expression');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(1,'замок','NOUN','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(2,'елка','NOUN','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(3,'читать','VERB','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(4,'все','NPRO','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(5,'молоко','NOUN','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(6,'нетвсловаре','NOUN','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(7,'выражение','OTHER','expression');
             """)
 
     def test_stress_and_yo_are_preserved(self):
@@ -139,7 +139,7 @@ class OpenRussianTests(unittest.TestCase):
             ref.commit()
         with closing(sqlite3.connect(self.lexicon)) as lex:
             lex.execute(
-                "INSERT INTO lexemes VALUES(8,'Дом','NOUN','word')"
+                "INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(8,'Дом','NOUN','word')"
             )
             lex.commit()
         with connect_reference(self.reference) as ref, closing(sqlite3.connect(self.lexicon)) as lex:
@@ -245,7 +245,7 @@ class OpenRussianTests(unittest.TestCase):
             )
             ref.commit()
         with closing(sqlite3.connect(self.lexicon)) as lex:
-            lex.execute("INSERT INTO lexemes VALUES(8,'разве','PRCL','word')")
+            lex.execute("INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(8,'разве','PRCL','word')")
             lex.commit()
         result = diagnose(self.lexicon, self.reference, self.root / "work")
         pair = next(item for item in result["pos_mismatch_pairs"]
