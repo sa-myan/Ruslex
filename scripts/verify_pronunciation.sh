@@ -34,7 +34,8 @@ docker run --rm --network none \
   --entrypoint python \
   ruslex-pronunciation-check:local /app/scripts/smoke_test.py
 
-printf '\n== Build on-demand processing image ==\n'
+printf '\n== Build isolated processing image ==\n'
+export PROCESSING_IMAGE=ruslex-pronunciation-processing-check:local
 ./process.sh build
 
 printf '\n== Read-only OpenRussian info ==\n'
