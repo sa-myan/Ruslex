@@ -138,6 +138,36 @@ def check_public_search(anonymous, queries, connections) -> None:
         )
 
 
+def check_word_forms(anonymous, connections) -> None:
+    """Verify morphology form search and entry detail on a migrated snapshot."""
+    from urllib.parse import quote
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE name='lexeme_forms'")
+        if cursor.fetchone() is None:
+            print("SKIP morphological forms tests: schema not installed in snapshot")
+            return
+        cursor.execute(
+            """SELECT f.lexeme_id,f.form,f.form_key
+               FROM lexeme_forms f JOIN lexemes l ON l.id=f.lexeme_id
+               WHERE l.human_status!='hidden' AND f.form_key!=lower(l.lemma)
+               ORDER BY length(f.form_key) DESC,f.lexeme_id LIMIT 1"""
+        )
+        row = cursor.fetchone()
+    if row is None:
+        print("SKIP morphology search test: no inflected forms in snapshot")
+        return
+    lexeme_id, form, _ = row
+    entry = anonymous.get(f"/api/lexemes/{lexeme_id}")
+    check(entry.status_code == 200 and
+          any(candidate["form"] == form for candidate in
+              entry.json()["word_forms"]),
+          "Inflected forms are visible in dictionary entry")
+    response = anonymous.get("/api/lexemes?q=" + quote(form))
+    ids = [item["id"] for item in response.json()["items"]]
+    check(response.status_code == 200 and lexeme_id in ids,
+          "Search by inflected form finds its dictionary lemma")
+
+
 def check_permissions(anonymous, reviewer, editor) -> None:
     check(
         json_request(anonymous, "patch", "/api/lexemes/1", {"notes": "bad"}).status_code == 403,
@@ -462,6 +492,7 @@ def main() -> None:
         anonymous = Client(enforce_csrf_checks=True)
         check(anonymous.get("/api/auth/me").status_code == 200, "Auth handshake")
         check_public_search(anonymous, queries, connections)
+        check_word_forms(anonymous, connections)
 
         reviewer_user = User.objects.create_user("reviewer", password="StrongPassword!49")
         reviewer_user.groups.add(Group.objects.get(name="Reviewer"))
