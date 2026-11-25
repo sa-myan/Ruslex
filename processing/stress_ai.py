@@ -424,6 +424,44 @@ def parse_approval_ids(value: str | None) -> set[int]:
         raise ValueError("Duplicate lexeme ID in approvals")
     return set(ids)
 
+def preview_approvals(live: Path, reference: Path, work_root: Path,
+                      name: str, approved_ids: set[int]) -> dict:
+    """Read-only approval preflight: the exact set the offline promoter will use."""
+    previous = plan(live, reference, work_root, name)
+    automatic = {row["id"]: row for row in previous["automatic_preview"]}
+    manual = {row["id"]: row for row in previous["manual_approvable"]}
+    eligible_ids = set(automatic) | set(manual)
+    unknown = approved_ids - eligible_ids
+    if unknown:
+        raise ValueError(f"IDs were not actionable AI proposals: {sorted(unknown)}")
+    if approved_ids and previous["remaining"]:
+        raise RuntimeError(
+            f"Finish remaining AI batches before approval: {previous['remaining']}"
+        )
+    chosen = []
+    for word_id in sorted(approved_ids | set(automatic)):
+        row = automatic.get(word_id) or manual[word_id]
+        selected = "automatic" if word_id in automatic and word_id not in approved_ids else "human_approved"
+        chosen.append({
+            "id": word_id, "lemma": row["lemma"], "reading": row["reading"],
+            "source": "openrussian" if row.get("reference_id") else "manual",
+            "reference_id": row.get("reference_id", ""),
+            "approval": selected,
+        })
+    return {
+        "run": name, "case_count": previous["total_cases"],
+        "completed": previous["completed"], "remaining": previous["remaining"],
+        "selected_count": len(chosen),
+        "source_backed_count": sum(row["source"] == "openrussian" for row in chosen),
+        "unsourced_human_approval_count": sum(row["source"] == "manual" for row in chosen),
+        "excluded_ids": sorted(
+            set(item["id"] for item in previous["review_preview"]) -
+            set(row["id"] for row in chosen)
+        ),
+        "selected": chosen, "data_mutation": "none",
+    }
+
+
 def apply(live: Path, reference: Path, work_root: Path, backups: Path,
           name: str, approved_ids: set[int] | None = None) -> dict:
     """Apply validated unanimous AI choices or individually approved proposals.
