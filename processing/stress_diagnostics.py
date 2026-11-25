@@ -194,6 +194,7 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
         "reference_sha256": fingerprint,
         "report": str(report),
         "visibility": visibility,
+        "blocked": overview["blocked"],
         "blocked_all": overview["blocked"],
         "pos_mismatch_pairs": [
             {**row, "examples": row["examples"][:2]}
