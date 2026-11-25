@@ -46,6 +46,12 @@ if [ ! -r "$db_path" ]; then
   exit 1
 fi
 
+printf '\n== Abbreviation migration on the SAME disposable morphology DB ==\n'
+docker compose -f docker-compose.processing.yml run --rm --no-deps rehearsal \
+  python -c 'from pathlib import Path; import sys; from processing.abbreviations import initialize, categorize; p=Path(sys.argv[1]); b=Path(sys.argv[2]); print(initialize(p,b)); print(categorize(p,b))' \
+  "/work/form_rehearsals/$stamp/lexicon.db" \
+  "/work/form_rehearsals/$stamp/backups"
+
 printf '\n== Django smoke tests using the migrated disposable dictionary ==\n'
 docker run --rm --network none \
   -v "$data_root:/data:ro" \
