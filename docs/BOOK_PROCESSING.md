@@ -34,6 +34,15 @@ or existing workspaces.
    ./process.sh book-run book3
    ~~~
 
+   Every AI stage now streams live progress to the terminal: `[AI forms]`
+   for OCR classifications, `[AI lexemes]` for vocabulary, `[AI pages]`
+   for expression extraction, and `[AI stress]` for pronunciation
+   exceptions. Messages show the batch/ID range, completed and remaining
+   items, validation retries, and elapsed time. They are flushed before
+   provider calls; on resume previously saved batches count toward progress.
+   An in-flight provider request has no artificial percentage estimate.
+   Final JSON output remains unchanged.
+
    The first invocation is a small provider trial. On later invocations
    the book title, model, verifier and expression setting are remembered.
    Continue only if the report says more work remains. Without
