@@ -14,6 +14,7 @@ from processing import cli
 from processing.openrussian import connect_reference, lookup, normalize_accented, match_capitalization, result
 from processing.reference_audit import audit_entries, write_report
 from processing.pronunciations import initialize, backfill_plan, apply_backfill
+from processing.stress_diagnostics import diagnose
 
 
 class OpenRussianTests(unittest.TestCase):
@@ -184,6 +185,43 @@ class OpenRussianTests(unittest.TestCase):
             ).fetchone()[0], "читать")
             self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
         self.assertTrue(list(backup_dir.glob("before-stress-*.db")))
+
+    def test_diagnostic_reports_unresolved_without_changing_live_data(self):
+        backup_dir = self.root / "backups"
+        initialize(self.lexicon, backup_dir)
+        apply_backfill(self.lexicon, self.reference, backup_dir)
+        original = (self.lexicon.read_bytes(), self.reference.read_bytes())
+        result = diagnose(self.lexicon, self.reference, self.root / "work")
+        self.assertEqual(result["already_have_pronunciations"], 1)
+        self.assertEqual(result["unresolved_count"], 5)
+        self.assertTrue(result["report"].endswith("unresolved_headwords.json"))
+        self.assertIn("ambiguous", result["blocked"])
+        self.assertTrue(result["yo_disagreements"])
+        report = json.loads(Path(result["report"]).read_text(encoding="utf-8"))
+        self.assertEqual(len(report["all_cases"]), 5)
+        self.assertEqual(report["data_mutation"], "none")
+        self.assertEqual(original, (self.lexicon.read_bytes(), self.reference.read_bytes()))
+
+    def test_diagnostic_explains_unknown_pos_with_meaning(self):
+        with closing(sqlite3.connect(self.reference)) as ref:
+            ref.execute(
+                "INSERT INTO words VALUES(?,?,?,?,?,?)",
+                ("8", "разве", "ра'зве", "other", "", ""),
+            )
+            ref.execute(
+                "INSERT INTO translations VALUES(?,?,?,?)",
+                ("c", "en", "8", "really"),
+            )
+            ref.commit()
+        with closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.execute("INSERT INTO lexemes VALUES(8,'разве','PRCL','word')")
+            lex.commit()
+        result = diagnose(self.lexicon, self.reference, self.root / "work")
+        pair = next(item for item in result["pos_mismatch_pairs"]
+                    if item["ruslex_pos"] == "PRCL" and item["openrussian_type"] == "other")
+        self.assertEqual(pair["count"], 1)
+        self.assertEqual(pair["examples"][0]["reference_glosses"], ["really"])
+        self.assertEqual(result["blocked"]["unverified_reference_pos"], 1)
 
     def test_cli_lookup(self):
         with patch.object(cli, "REFERENCE_DB", self.reference):
