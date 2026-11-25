@@ -12,8 +12,8 @@ from .models import (
     Example, ExpressionComponent, ExternalLink, Lexeme, Pattern, Relation, Sense,
 )
 from .query_helpers import LEXICON, legacy_rows, one, tags_for_senses
-from .pronunciation import pronunciations_for, display_lemma
-from .abbreviation_display import display as display_abbreviation, sense_ids_for
+from .pronunciation import pronunciations_for, display_lemma, sense_ids_for
+from .abbreviation_display import display as display_abbreviation
 from .inflections import for_entry as inflected_forms
 
 
