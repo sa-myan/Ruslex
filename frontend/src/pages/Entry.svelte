@@ -145,7 +145,7 @@
 {#if entry}
   <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
     <div>
-      <p class="kicker">{entry.entry_type === 'expression' ? 'Expression' : 'Dictionary entry'}</p>
+      <p class="kicker">{entry.entry_type === 'expression' ? 'Expression' : entry.entry_type === 'abbreviation' ? 'Abbreviation' : 'Word'}</p>
       <h2 class="text-3xl md:text-4xl russian font-bold mt-2">{entry.stressed_lemma ?? entry.lemma}</h2>
       <div class="flex flex-wrap gap-2 mt-3">
         <span class="badge badge-neutral">{entry.pos}</span>
@@ -167,7 +167,7 @@
     </div>
   </div>
 
-  {#if $editMode && entry.entry_type === 'word'}
+  {#if $editMode && entry.entry_type === 'word' || entry.entry_type === 'abbreviation'}
     <PronunciationEditor {entry} {refresh} />
   {/if}
 
