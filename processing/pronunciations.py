@@ -107,14 +107,18 @@ def backfill_plan(live: Path, reference: Path) -> dict:
         present = set()
         if has_storage:
             present = {r[0] for r in lexicon.execute(
-                "SELECT DISTINCT lexeme_id FROM lexeme_pronunciations"
+                """SELECT DISTINCT p.lexeme_id FROM lexeme_pronunciations p
+                   JOIN lexemes l ON l.id=p.lexeme_id
+                   WHERE l.entry_type='word' AND l.human_status != 'hidden'"""
             )}
     candidates = [r for r in rows if r["safe_backfill"] and r["lexeme_id"] not in present]
     from collections import Counter
     return {
         "schema_installed": has_storage,
         "total_headwords": len(rows),
+        "hidden_entries_excluded": True,
         "statuses": dict(Counter(r["status"] for r in rows)),
+        "backfill_methods": dict(Counter(r["backfill_method"] for r in candidates)),
         "backfill_blockers": dict(Counter(r["backfill_blocker"] for r in rows if r["lexeme_id"] not in present and not r["safe_backfill"])),
         "candidate_blocked_reference_types": dict(Counter(r["reference_types"] for r in rows if r["lexeme_id"] not in present and r["status"] == "candidate" and not r["safe_backfill"]).most_common(12)),
         "yo_checks": dict(Counter(r["yo_check"] for r in rows)),
