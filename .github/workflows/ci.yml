@@ -1,0 +1,38 @@
+name: Ruslex checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Python offline regression tests
+        run: python scripts/offline_checks.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund;
+          else npm install --no-audit --no-fund; fi
+      - name: Svelte type checks
+        working-directory: frontend
+        run: npm run check
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
