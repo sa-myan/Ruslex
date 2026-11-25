@@ -10,6 +10,7 @@ import re
 from .catalog import PARTS_OF_SPEECH, STATUSES
 from .models import Lexeme, Sense
 from .pronunciation import pronunciations_for, display_lemma
+from .inflections import ids_matching as form_ids_matching
 from .query_helpers import (
     LEXICON, _page_counts, _sql_placeholders, legacy_rows, paginate,
     tags_for_senses,
@@ -185,9 +186,12 @@ def _rank_words(words: list, query: str, english: bool) -> list:
     ):
         matching_senses[item.lexeme_id].append(item)
 
+    exact_forms = form_ids_matching(query, {entry.id for entry in words}) if not english else set()
     ranked = []
     for entry in words:
         tier = score(entry.lemma, matching_senses[entry.id], query, english=english)
+        if entry.id in exact_forms and (tier is None or tier > 1):
+            tier = 1
         if tier is None:
             continue
         ranked.append(
