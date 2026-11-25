@@ -10,6 +10,10 @@ Ruslex now distinguishes three different layers:
    imported books (`lexeme_pages` and `surface_pages`). Generated forms are
    **not** presented as evidence that a textbook contains them.
 
+Abbreviations are distinct from words. A small known set of lexicalized,
+inflecting abbreviations (such as `вуз`) can have generated paradigms;
+ordinary initialisms such as `МГУ` have no automatically invented inflection.
+
 This is intentionally not a full stress dictionary of every conjugated form.
 We never invent inflection stress. `ё` is retained as emitted by the
 morphological analyzer, and the original headword stress remains separate.
