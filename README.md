@@ -11,7 +11,8 @@ inside a web request.
 | --- | --- |
 | Understand the VPS, Docker, Caddy and where files live | [VPS foundations](docs/VPS_FOUNDATIONS.md) |
 | Install, build, deploy or roll back the website | [Deployment](docs/DEPLOYMENT.md) |
-| Import Mistral OCR, classify words, enrich, promote data | [Book processing](docs/BOOK_PROCESSING.md) |
+| Import a new textbook in one isolated workspace | [Book processing](docs/BOOK_PROCESSING.md) |
+| Generate and search Russian inflected forms | [Word forms](docs/WORD_FORMS.md) |
 | Back up, restore, disable, troubleshoot | [Operations](docs/OPERATIONS.md) |
 | Understand code and data ownership | [Architecture](docs/ARCHITECTURE.md) |
 | Review stress and ё migration | [Pronunciation](docs/PRONUNCIATION.md) |
