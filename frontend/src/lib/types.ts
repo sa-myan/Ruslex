@@ -148,8 +148,15 @@ export interface Pronunciation {
   sense_ids: number[];
 }
 
+export interface WordForm {
+  form: string;
+  grammemes: string;
+  source: string;
+}
+
 export interface Entry extends Summary {
   pronunciations: Pronunciation[];
+  word_forms: WordForm[];
   notes: string;
   created_at: string;
   senses: Sense[];
