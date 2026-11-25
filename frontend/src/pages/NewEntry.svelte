@@ -62,6 +62,7 @@
       <select bind:value={entryType}>
         <option value="word">Word</option>
         <option value="expression">Expression</option>
+        <option value="abbreviation">Abbreviation</option>
       </select>
     </label>
     <label class="field">
