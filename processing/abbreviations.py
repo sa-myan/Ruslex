@@ -84,6 +84,13 @@ def uppercase_in_running_text(markdown: str, uppercase: str) -> bool:
 
 
 def _candidates(db: sqlite3.Connection) -> list[dict]:
+    """Existing data: use lexical evidence, never typography alone.
+
+    Historic OCR often uses uppercase for titles and headings. Those are
+    unsuitable as abbreviation-review evidence, particularly for ordinary
+    already-curated words. Unknown uppercase forms are examined during
+    *future OCR imports* instead, using prose-context hints and AI.
+    """
     cases = []
     for row in db.execute(
         """SELECT l.id,l.lemma,l.pos,l.human_status,
@@ -97,32 +104,13 @@ def _candidates(db: sqlite3.Connection) -> list[dict]:
         meanings = str(row["meanings"] or "")
         known = name in KNOWN_ABBREVIATIONS or name in DOTTED_ABBREVIATIONS
         definitional = bool(DEFINITION_CUE.search(meanings))
-        uppercase_evidence = []
-        if not known and not definitional and 3 <= len(name) <= 9:
-            # Require separate textbook pages containing uppercase in prose:
-            # two mentions on a single heading/page are NOT two observations.
-            for source in db.execute(
-                """SELECT lp.page_id,lp.context,p.markdown
-                   FROM lexeme_pages lp
-                   JOIN pages p ON p.id=lp.page_id
-                   WHERE lp.lexeme_id=? ORDER BY lp.page_id LIMIT 100""",
-                (row["id"],),
-            ):
-                if uppercase_in_running_text(source["markdown"], name.upper()):
-                    uppercase_evidence.append(source["context"][:190])
-                if len(uppercase_evidence) >= 2:
-                    break
-        if known or definitional or len(uppercase_evidence) >= 2:
+        if known or definitional:
             cases.append({
                 "id": row["id"], "lemma": row["lemma"], "pos": row["pos"],
                 "meanings": meanings[:260],
-                "reason": (
-                    "known_abbreviation" if known else
-                    "meaning_suggests_abbreviation" if definitional else
-                    "uppercase_in_prose_on_multiple_pages"
-                ),
+                "reason": "known_abbreviation" if known else "meaning_suggests_abbreviation",
                 "automatic": known,
-                "contexts": uppercase_evidence[:2],
+                "contexts": [],
             })
     return cases
 
