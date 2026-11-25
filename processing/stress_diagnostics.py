@@ -107,6 +107,12 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
             {r[0] for r in db.execute("SELECT DISTINCT lexeme_id FROM lexeme_pronunciations")}
             if existing_table else set()
         )
+        statuses = {
+            row["id"]: row["human_status"]
+            for row in db.execute(
+                "SELECT id, human_status FROM lexemes WHERE entry_type='word'"
+            )
+        }
         audit = [r for r in audit_entries(ref, db) if r["lexeme_id"] not in existing]
         meanings = _sense_previews(db, [r["lexeme_id"] for r in audit])
         ids = list(dict.fromkeys(
@@ -125,6 +131,7 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
             "lexeme_id": row["lexeme_id"],
             "lemma": row["lemma"],
             "ruslex_pos": row["pos"],
+            "human_status": statuses[row["lexeme_id"]],
             "status": row["status"],
             "backfill_blocker": row["backfill_blocker"],
             "stress_candidates": row["stress_candidates"],
@@ -138,7 +145,33 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
             "reasons": row["reasons"],
         })
 
+    # Hidden means excluded from normal dictionary browsing, but it is not
+    # a deletion or an assertion that the entry is a proper name.
+    visible_cases = [row for row in cases if row["human_status"] != "hidden"]
+    hidden_cases = [row for row in cases if row["human_status"] == "hidden"]
     overview = _summaries(cases)
+    visible = _summaries(visible_cases)
+    hidden = _summaries(hidden_cases)
+    visible_ids = {lexeme_id for lexeme_id, status in statuses.items()
+                   if status != "hidden"}
+    hidden_ids = set(statuses) - visible_ids
+    visibility = {
+        "visible": {
+            "headwords": len(visible_ids),
+            "stored_pronunciations": len(existing & visible_ids),
+            "unresolved": len(visible_cases),
+            "blocked": visible["blocked"],
+        },
+        "hidden": {
+            "headwords": len(hidden_ids),
+            "stored_pronunciations": len(existing & hidden_ids),
+            "unresolved": len(hidden_cases),
+            "blocked": hidden["blocked"],
+        },
+        "unresolved_by_review_status": dict(sorted(
+            Counter(row["human_status"] for row in cases).items()
+        )),
+    }
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     directory = work_root / "stress_diagnostics" / stamp
     directory.mkdir(parents=True, exist_ok=False)
@@ -147,22 +180,29 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
         "source_sha256": fingerprint,
         "already_have_pronunciations": len(existing),
         **overview,
+        "visibility": visibility,
+        "visible_priority": visible,
+        "hidden_summary": hidden,
         "all_cases": cases,
         "data_mutation": "none",
     })
-    # Limit terminal output to a practical size; all evidence remains in JSON.
-    terminal = dict(overview)
-    terminal["pos_mismatch_pairs"] = [
-        {**row, "examples": row["examples"][:2]}
-        for row in overview["pos_mismatch_pairs"][:18]
-    ]
-    terminal["ambiguous"] = overview["ambiguous"][:13]
-    terminal["source_warnings"] = overview["source_warnings"][:11]
+    # The terminal is an actionable, visible-only queue. The JSON preserves
+    # every hidden entry and the original all-entry diagnostic for auditing.
     return {
         "unresolved_count": len(cases),
         "already_have_pronunciations": len(existing),
         "reference_sha256": fingerprint,
         "report": str(report),
-        **terminal,
+        "visibility": visibility,
+        "blocked_all": overview["blocked"],
+        "pos_mismatch_pairs": [
+            {**row, "examples": row["examples"][:2]}
+            for row in visible["pos_mismatch_pairs"][:18]
+        ],
+        "ambiguous": visible["ambiguous"][:13],
+        "yo_disagreements": visible["yo_disagreements"],
+        "source_warnings": visible["source_warnings"][:11],
+        "visible_missing_examples": visible["missing_examples"],
+        "hidden_missing_examples": hidden["missing_examples"][:8],
         "data_mutation": "none",
     }
