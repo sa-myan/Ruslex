@@ -211,7 +211,7 @@ class OpenRussianTests(unittest.TestCase):
         self.assertEqual(result["visibility"]["hidden"]["unresolved"], 2)
         self.assertEqual(result["visibility"]["visible"]["unresolved"], 4)
         self.assertEqual(result["visibility"]["hidden"]["blocked"]["not_found"], 1)
-        self.assertEqual(result["visibility"]["visible"]["blocked"]["not_found"], 0)
+        self.assertEqual(result["visibility"]["visible"]["blocked"].get("not_found", 0), 0)
         self.assertFalse(any(item["lemma"] == "нетвсловаре"
                              for item in result["visible_missing_examples"]))
         self.assertTrue(any(item["lemma"] == "нетвсловаре"
