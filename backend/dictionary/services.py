@@ -359,8 +359,8 @@ def save_component(word_id: int, data: dict, component_id: int | None = None) ->
     fields(data, {"word_id", "position", "surface", "notes"})
     expression = word(word_id)
     target = word(identifier(data, "word_id"))
-    if expression.entry_type != "expression" or target.entry_type != "word":
-        fail("An expression can only contain word entries")
+    if expression.entry_type != "expression" or target.entry_type not in {"word", "abbreviation"}:
+        fail("An expression can only contain words or abbreviations")
 
     values = {
         "expression_id": word_id,
