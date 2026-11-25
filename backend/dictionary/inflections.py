@@ -23,7 +23,7 @@ def for_entry(word_id: int) -> list[dict]:
         return []
     return legacy_rows(
         """SELECT form,grammemes,source FROM lexeme_forms
-           WHERE lexeme_id=%s ORDER BY form_key,form,grammemes LIMIT 300""",
+           WHERE lexeme_id=%s ORDER BY form_key,form,grammemes""",
         [word_id],
     )
 
