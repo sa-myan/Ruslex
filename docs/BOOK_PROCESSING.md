@@ -146,6 +146,62 @@ A form marked uncertain may also remain for future review, but make a
 conscious decision before promoting. New `lexeme_pages` occurrences are linked
 only to admitted analyses; an existing lexeme is reused, never replaced.
 
+### Quick progress check (any time after OCR import)
+
+Instead of inspecting raw SQLite tables or guessing what remains, run:
+
+```bash
+./process.sh book-status book2_2026 --book 'Second Russian Book'
+```
+
+This read-only report gives page count, pending and uncertain forms,
+attested lexemes, new entries and the next safe step. An uncertain form
+can be deferred; pending forms cannot be promoted. Use model batches
+for the routine form decisions, and manually review only unresolved cases.
+
+### Reusable AI pronunciation exception pass
+
+OpenRussian automatically supplies safe headword stress during ordinary
+promotion; this does **not** call an LLM. After promoting the book and
+adding its important senses, optionally run an AI pass on the **few
+remaining unresolved pronunciations from that book**:
+
+```bash
+./process.sh stress ai-run book2_stress \
+  --book 'Second Russian Book' --model 'provider/model-id' --dry-run
+./process.sh stress ai-run book2_stress \
+  --book 'Second Russian Book' --model 'provider/model-id' \
+  --verify-model 'provider/different-model-id' \
+  --batch-size 8 --max-batches 1
+# Repeat the same command without --max-batches to finish.
+./process.sh stress ai-plan book2_stress
+```
+
+The LLM sees each Ruslex meaning with stable sense IDs, short attested
+book contexts, and *separate* source glosses for every competing reading.
+Its output is strictly validated and saved in resumable batch files.
+Missing-reference suggestions stay **human review only**. Only
+independently agreeing high-confidence readings backed by the exact
+OpenRussian source and matching every recorded sense can be eligible for
+the guarded bulk application. Even then, there is no live write until
+you review the plan and explicitly run:
+
+```bash
+./manage.sh backup
+./process.sh stress ai-apply book2_stress --confirm
+```
+
+This runs with no network, automatically takes another backup and
+rechecks the current live dictionary and source IDs. Existing
+pronunciation records are never replaced. Any different meanings,
+conflicting dictionary variants, missing references or uncertain
+model outputs remain in the review queue for the normal entry editor.
+If you only have one model, omit `--verify-model`; the output is
+still useful as an editable proposal, but **nothing can be auto-applied**.
+
+This optional pass is a continuation of the book-processing workflow,
+not a replacement for the existing form and sense validation stages.
+
 ## 5. Review the proposed changes and promote
 
 ```bash
@@ -245,7 +301,9 @@ Model use may incur charges and outbound data transfer. Do not send material
 to an external AI provider unless you have the necessary rights.
 
 Remember: **importing OCR**, **resolving word forms**, **enriching vocabulary**,
-**promoting data**, and **editing on the website** are five distinct stages.
+**promoting data**, **AI pronunciation exception review**, and **editing on the website**
+are separate, guarded stages. The normal case follows OpenRussian automatically;
+the exception stage is small, reusable and optional.
 
 ## Optional OpenRussian headword reference (no AI and no promotion)
 
