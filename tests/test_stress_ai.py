@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from processing.pronunciations import initialize
-from processing.stress_ai import analyze, plan, apply, automatic_reasons, validate, evidence, parse_approval_ids
+from processing.stress_ai import analyze, plan, apply, automatic_reasons, validate, evidence, parse_approval_ids, preview_approvals
 
 
 class StressAITests(unittest.TestCase):
@@ -182,6 +182,25 @@ class StressAITests(unittest.TestCase):
         self.assertEqual(resumed["completed"], 2)
         self.assertIn("resuming 1 completed", logs.getvalue())
         self.assertIn("complete: 2/2", logs.getvalue())
+
+    def test_read_only_approval_preflight_is_exact_and_rejects_invalid_ids(self):
+        vote = self.vote(1, "писа́ть", "10", [4])
+        with patch("processing.stress_ai.opencode", return_value=vote):
+            analyze(self.live, self.reference, self.work,
+                    name="preflight", book="Test Book",
+                    model="provider/model-a", batch_size=1)
+        before = self.live.read_bytes()
+        preview = preview_approvals(self.live, self.reference, self.work,
+                                    "preflight", {1})
+        self.assertEqual(preview["selected_count"], 1)
+        self.assertEqual(preview["source_backed_count"], 1)
+        self.assertEqual(preview["unsourced_human_approval_count"], 0)
+        self.assertEqual(preview["selected"][0]["id"], 1)
+        self.assertEqual(preview["data_mutation"], "none")
+        self.assertEqual(self.live.read_bytes(), before)
+        with self.assertRaisesRegex(ValueError, "not actionable"):
+            preview_approvals(self.live, self.reference, self.work,
+                              "preflight", {999})
 
     def test_explicit_approval_of_validated_single_model_reference_choice(self):
         first = self.vote(1, "писа́ть", "10", [4])
