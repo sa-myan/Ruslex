@@ -62,7 +62,8 @@ def _directory(root: Path, name: str) -> Path:
     return root / "stress_ai" / name
 
 
-def evidence(live: Path, reference: Path, root: Path) -> tuple[list[dict], str]:
+def evidence(live: Path, reference: Path, root: Path, *,
+             book: str | None = None) -> tuple[list[dict], str]:
     """Snapshot of only active unresolved words, with stable meaning IDs."""
     summary = diagnose(live, reference, root)
     raw = json.loads(Path(summary["report"]).read_text(encoding="utf-8"))
@@ -71,8 +72,26 @@ def evidence(live: Path, reference: Path, root: Path) -> tuple[list[dict], str]:
         has_pages = db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lexeme_pages'"
         ).fetchone() is not None
+        book_ids = None
+        if book:
+            editions = db.execute(
+                "SELECT id FROM books WHERE title=?", (book,)
+            ).fetchall()
+            if len(editions) != 1:
+                raise ValueError(
+                    f"Book title {book!r} must match exactly one imported edition"
+                )
+            book_ids = {
+                row[0] for row in db.execute(
+                    """SELECT DISTINCT lp.lexeme_id FROM lexeme_pages lp
+                       JOIN pages p ON p.id=lp.page_id WHERE p.book_id=?""",
+                    (editions[0][0],)
+                )
+            }
         for case in raw["all_cases"]:
             lexeme_id = case["lexeme_id"]
+            if book_ids is not None and lexeme_id not in book_ids:
+                continue
             senses = [
                 {"id": row["id"], "meaning": str(row["meaning"] or "")[:180]}
                 for row in db.execute(
@@ -217,13 +236,17 @@ def _completed(root: Path, cases: list[dict]) -> list[dict]:
 def analyze(live: Path, reference: Path, work_root: Path, *, name: str,
             model: str, verify_model: str | None = None, batch_size: int = 8,
             max_batches: int | None = None, timeout: int = 240,
-            dry_run: bool = False, executable: str = "opencode") -> dict:
+            dry_run: bool = False, executable: str = "opencode",
+            book: str | None = None) -> dict:
     if not 1 <= batch_size <= 20 or (max_batches is not None and max_batches < 1):
         raise ValueError("Use batch size 1-20 and positive max batches")
-    cases, fingerprint = evidence(live, reference, work_root)
+    if verify_model and verify_model == model:
+        raise ValueError("Verifier must be a different model ID")
+    cases, fingerprint = evidence(live, reference, work_root, book=book)
     root = _directory(work_root, name)
     manifest = {"case_hash": _hash(cases), "reference_sha256": fingerprint,
-                "model": model, "verify_model": verify_model, "batch_size": batch_size}
+                "model": model, "verify_model": verify_model,
+                "batch_size": batch_size, "book": book}
     file = root / "manifest.json"
     if file.exists():
         if json.loads(file.read_text(encoding="utf-8")) != manifest:
@@ -260,7 +283,8 @@ def analyze(live: Path, reference: Path, work_root: Path, *, name: str,
 def plan(live: Path, reference: Path, work_root: Path, name: str) -> dict:
     root = _directory(work_root, name)
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-    cases, fingerprint = evidence(live, reference, work_root)
+    cases, fingerprint = evidence(live, reference, work_root,
+                                  book=manifest.get("book"))
     if manifest["reference_sha256"] != fingerprint or manifest["case_hash"] != _hash(cases):
         raise RuntimeError("AI input is stale: a live sense, lexeme or reference changed")
     results = _completed(root, cases)
@@ -293,8 +317,9 @@ def apply(live: Path, reference: Path, work_root: Path, backups: Path,
     with connect_reference(reference) as ref, write_database(live) as db:
         db.execute("BEGIN IMMEDIATE")
         # Recheck under the write lock, including source/meaning changes.
-        cases, fingerprint = evidence(live, reference, work_root)
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        cases, fingerprint = evidence(live, reference, work_root,
+                                      book=manifest.get("book"))
         if (manifest["reference_sha256"] != fingerprint or
                 manifest["case_hash"] != _hash(cases)):
             raise RuntimeError("Live evidence changed during application")
