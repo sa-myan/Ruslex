@@ -159,10 +159,18 @@ def resolve(db, *, workspace: Path, book: str, model: str,
         """SELECT COUNT(*) FROM reviews r JOIN books b ON b.id=r.book_id
            WHERE b.title=? AND r.status=?""", (book, status)
     ).fetchone()[0]
-    remaining_now = remaining_initial
+    # A resumed book run should show overall completion, rather than
+    # resetting the progress bar to zero for each new CLI invocation.
+    all_forms = db.execute(
+        """SELECT COUNT(*) FROM reviews r JOIN books b ON b.id=r.book_id
+           WHERE b.title=?""", (book,)
+    ).fetchone()[0]
+    total_for_pass = remaining_initial if retry else all_forms
+    completed_before = 0 if retry else all_forms - remaining_initial
     progress = AIProgress(
         "forms" + ("/retry" if retry else ""),
-        total=remaining_initial, batch_size=batch_size, max_batches=max_batches
+        total=total_for_pass, completed=completed_before,
+        batch_size=batch_size, max_batches=max_batches
     )
     if not dry_run:
         progress.begin()
