@@ -25,7 +25,7 @@ from .forms import resolve, review_batch, apply_decisions
 from .openrussian import connect_reference, lookup, result as reference_result, verify_schema, reference_fingerprint
 from .reference_audit import audit_entries, write_report, suggested_report_path
 from .stress_diagnostics import diagnose as diagnose_stress
-from .stress_ai import analyze as stress_ai_analyze, plan as stress_ai_plan, apply as stress_ai_apply, parse_approval_ids
+from .stress_ai import analyze as stress_ai_analyze, plan as stress_ai_plan, apply as stress_ai_apply, parse_approval_ids, preview_approvals as stress_ai_approval_preview
 from .pronunciations import initialize as stress_initialize, backfill_plan as stress_plan, apply_backfill as stress_apply, rehearse as stress_rehearse
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan, promote, workspace_paths
@@ -77,7 +77,10 @@ def main(argv=None):
     ai_run.add_argument("--dry-run", action="store_true")
     ai_plan = stress_actions.add_parser("ai-plan", help="Review staged AI decisions; read-only")
     ai_plan.add_argument("name")
-    ai_apply = stress_actions.add_parser("ai-apply", help="Apply only doubly-verified choices, after backup")
+    ai_review = stress_actions.add_parser("ai-approval-plan", help="Read-only preview of a selected pronunciation approval set")
+    ai_review.add_argument("name")
+    ai_review.add_argument("--approve", required=True, help="Comma-separated IDs reviewed by the operator")
+    ai_apply = stress_actions.add_parser("ai-apply", help="Apply verified choices or explicitly approved IDs, after backup")
     ai_apply.add_argument("name")
     ai_apply.add_argument("--confirm", action="store_true", required=True)
     ai_apply.add_argument("--approve", help="Comma-separated lexeme IDs explicitly approved by a human")
@@ -221,6 +224,10 @@ def main(argv=None):
                     book=args.book)
             elif args.stress_action == "ai-plan":
                 result = stress_ai_plan(LIVE_DB, REFERENCE_DB, WORK_ROOT, args.name)
+            elif args.stress_action == "ai-approval-plan":
+                result = stress_ai_approval_preview(
+                    LIVE_DB, REFERENCE_DB, WORK_ROOT,
+                    args.name, parse_approval_ids(args.approve))
             elif args.stress_action == "ai-apply":
                 result = stress_ai_apply(LIVE_DB, REFERENCE_DB, WORK_ROOT,
                                          BACKUP_ROOT, args.name, approved_ids=parse_approval_ids(args.approve))
