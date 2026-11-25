@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from .prompts import BASE_PROMPT, LEXEME_TASK, PAGE_TASK
 from .provider import opencode
-from .storage import read_database, write_database, snapshot, atomic_json, checked_workspace, staged_files, inputs, chunks
+from .storage import read_database, write_database, snapshot, atomic_json, checked_workspace, staged_files, inputs, chunks, new_word_ids
 from .validation import validate_lexemes, validate_pages, normalized
 from .taxonomy import seed_tags
 
@@ -58,7 +58,8 @@ def run(workspace: Path, *, stage: str, model: str, executable: str,
     if previous is None and not dry_run:
         atomic_json(selection, {"book": book})
     with read_database(source) as db:
-        todo = list(inputs(db, stage, book=book))
+        todo = list(inputs(db, stage, book=book,
+                           allow_new_ids=new_word_ids(workspace)))
     expected = len(todo)
     completed = 0
     for batch in chunks(todo, batch_size):
@@ -110,7 +111,8 @@ def run(workspace: Path, *, stage: str, model: str, executable: str,
 def report(workspace: Path, *, book: str | None = None):
     source = checked_workspace(workspace)
     with read_database(source) as db:
-        total = {"lexemes": len(list(inputs(db, "lexemes", book=book))),
+        total = {"lexemes": len(list(inputs(db, "lexemes", book=book,
+                          allow_new_ids=new_word_ids(workspace)))),
                  "pages": len(list(inputs(db, "pages", book=book)))}
     complete = {}
     for stage in ("lexemes", "pages"):
