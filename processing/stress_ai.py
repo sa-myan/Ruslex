@@ -279,8 +279,27 @@ def analyze(live: Path, reference: Path, work_root: Path, *, name: str,
                 "batch_size": batch_size, "book": book}
     file = root / "manifest.json"
     if file.exists():
-        if json.loads(file.read_text(encoding="utf-8")) != manifest:
-            raise RuntimeError("AI run evidence or settings changed; use a new run name")
+        saved = json.loads(file.read_text(encoding="utf-8"))
+        if saved != manifest:
+            differences = []
+            for key in ("model", "verify_model", "batch_size", "book"):
+                if saved.get(key) != manifest.get(key):
+                    differences.append(
+                        f"{key}: saved={saved.get(key)!r}, requested={manifest.get(key)!r}"
+                    )
+            if saved.get("case_hash") != manifest["case_hash"]:
+                differences.append("dictionary evidence changed (words, senses or contexts)")
+            if saved.get("reference_sha256") != manifest["reference_sha256"]:
+                differences.append("OpenRussian reference file changed")
+            unexpected = set(saved) ^ set(manifest)
+            if unexpected:
+                differences.append(f"manifest fields changed: {sorted(unexpected)}")
+            raise RuntimeError(
+                f"AI run {name!r} already exists with incompatible settings/evidence: "
+                + "; ".join(differences)
+                + ". Resume with the original options, or choose a NEW run name. "
+                  "Existing completed batches were preserved."
+            )
     elif not dry_run:
         root.mkdir(parents=True, exist_ok=False)
         atomic_json(file, manifest)
