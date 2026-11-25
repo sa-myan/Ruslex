@@ -25,9 +25,12 @@ The read-only `abbreviations plan` scans active entries and reports:
    relationships and textbook occurrences.
 2. **Meaning evidence** such as 'abbreviation', 'acronym' or 'stands for':
    review-only suggestions, not forced changes.
-3. **Repeated uppercase occurrences** in textbook source contexts:
-   review-only suggestions. Uppercase exercises and headings alone do not
-   prove a token is an abbreviation.
+3. **Uppercase occurrences** are *not* used to reclassify existing
+   dictionary entries: historical textbook headings produce convincing
+   but entirely false positives such as `УРОК`, `ПАРК` and `ВСЕГДА`.
+   For **new OCR material**, unfamiliar uppercase sequences in running prose
+   can be offered as review-only abbreviation hypotheses. The model must
+   confirm the lexical meaning before admitting such an entry.
 
 Hidden entries are logically absent and never reclassified. New OCR processing
 offers both word and abbreviation interpretations for unfamiliar uppercase
