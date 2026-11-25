@@ -16,6 +16,7 @@ from pathlib import Path
 from .openrussian import connect_reference, match_capitalization, plain_spelling, reference_fingerprint, word_rows
 from .pronunciations import _backup, _check, installed
 from .provider import opencode
+from .progress import AIProgress
 from .storage import atomic_json, read_database, write_database
 from .stress_diagnostics import diagnose
 
@@ -184,7 +185,8 @@ def validate(response: object, batch: list[dict]) -> list[dict]:
 
 def _ask_validated(prompt: str, *, model: str, batch: list[dict],
                    executable: str, timeout: int, run_root: Path,
-                   first_id: int, last_id: int, phase: str) -> list[dict]:
+                   first_id: int, last_id: int, phase: str,
+                   progress: AIProgress | None = None) -> list[dict]:
     """Retry a malformed AI batch twice, preserving rejected responses."""
     current_prompt = prompt
     for attempt in range(1, 4):
@@ -192,6 +194,9 @@ def _ask_validated(prompt: str, *, model: str, batch: list[dict],
         try:
             return validate(response, batch)
         except (ValueError, TypeError, KeyError) as exc:
+            if progress and attempt < 3:
+                progress.retry(first_id=first_id, last_id=last_id,
+                               attempt=attempt, error=str(exc), phase=phase)
             atomic_json(
                 run_root / "rejected" / f"{first_id:06d}-{last_id:06d}-{phase}-{attempt}.json",
                 {"error": str(exc), "model": model, "response": response},
@@ -318,6 +323,11 @@ def analyze(live: Path, reference: Path, work_root: Path, *, name: str,
         root.mkdir(parents=True, exist_ok=False)
         atomic_json(file, manifest)
     completed = 0
+    prior = _completed(root, cases) if file.exists() else []
+    progress = AIProgress("stress", total=len(cases), completed=len(prior),
+                          batch_size=batch_size, max_batches=max_batches)
+    if not dry_run:
+        progress.begin()
     for offset in range(0, len(cases), batch_size):
         batch = cases[offset:offset+batch_size]
         ids = [x["id"] for x in batch]
@@ -330,18 +340,27 @@ def analyze(live: Path, reference: Path, work_root: Path, *, name: str,
         if dry_run:
             return {"dry_run": True, "cases": len(cases), "next_batch": ids,
                     "prompt_preview": prompt[:2200], "data_mutation": "none"}
-        first = _ask_validated(
-            prompt, model=model, batch=batch, executable=executable,
-            timeout=timeout, run_root=root, first_id=ids[0], last_id=ids[-1],
-            phase="primary",
-        )
-        second = (_ask_validated(
-            prompt, model=verify_model, batch=batch, executable=executable,
-            timeout=timeout, run_root=root, first_id=ids[0], last_id=ids[-1],
-            phase="verify",
-        ) if verify_model else None)
-        atomic_json(target, {"input_ids": ids, "first": first, "second": second})
+        progress.batch_start(number=offset // batch_size + 1,
+                             first_id=ids[0], last_id=ids[-1], count=len(ids))
+        try:
+            first = _ask_validated(
+                prompt, model=model, batch=batch, executable=executable,
+                timeout=timeout, run_root=root, first_id=ids[0], last_id=ids[-1],
+                phase="primary", progress=progress,
+            )
+            second = (_ask_validated(
+                prompt, model=verify_model, batch=batch, executable=executable,
+                timeout=timeout, run_root=root, first_id=ids[0], last_id=ids[-1],
+                phase="verify", progress=progress,
+            ) if verify_model else None)
+            atomic_json(target, {"input_ids": ids, "first": first, "second": second})
+        except Exception as exc:
+            progress.failure(exc)
+            raise
         completed += 1
+        progress.saved(len(ids), extra=f"batch file {target.name}")
+    if not dry_run:
+        progress.finish()
     results = _completed(root, cases)
     return {"run": name, "cases": len(cases), "completed": len(results),
             "pending": len(cases)-len(results), "new_batches": completed,
