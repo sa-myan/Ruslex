@@ -10,6 +10,73 @@ checks. The old v3 corpus import and OCR form classification were adapted;
 the unsafe replacement-style enrichment DB rebuild has been removed from the
 public CLI.
 
+## Recommended workflow: one workspace, one promotion
+
+This supersedes the older, multi-command procedure below for **new books**.
+The older commands remain available for diagnosis, exceptional correction,
+or existing workspaces.
+
+1. Place your Mistral OCR export in `/srv/data/ruslex/ocr` (ZIP, JSON,
+   page folder or marked Markdown).
+2. Create an isolated workspace and import the entire detected OCR page range:
+
+   ~~~sh
+   ./process.sh book-start book3 --input /ocr/book3.zip --book 'Book Three'
+   ~~~
+
+   Use `--edition`, `--first`, `--last`, or `--offset` only when the
+   specific edition or page numbering needs them.
+
+3. Process OCR forms and missing senses (AI batches are resumable):
+
+   ~~~sh
+   ./process.sh book-run book3 --model 'provider/model-id' --max-batches 1
+   ./process.sh book-run book3
+   ~~~
+
+   The first invocation is a small provider trial. On later invocations
+   the book title, model, verifier and expression setting are remembered.
+   Continue only if the report says more work remains. Without
+   `--max-batches`, the command processes all remaining batches.
+
+   Optional: use `--verify-model 'provider/second-id'` for independent
+   checks, and `--expressions` to analyze textbook pages for idioms.
+   Expression scanning can be expensive, so it is opt-in.
+
+4. Check the single final change plan and promote once:
+
+   ~~~sh
+   ./process.sh book-status book3 --book 'Book Three'
+   ./process.sh plan book3
+   ./process.sh book-promote book3 --confirm
+   ~~~
+
+   The promoter runs without network access, creates its own verified
+   database backup, refuses changes to existing curated records, rejects
+   unfinished mandatory form decisions, and promotes **only additional rows**.
+   Existing reviewed words keep their senses, tags, relationships and notes.
+
+The normal pipeline adds senses to *newly admitted* lexemes before their
+first promotion, so the historical "promote → manually mark all kept →
+create a new enrichment workspace → promote again" cycle is no longer
+necessary. New words remain individually reviewable after promotion.
+Items that AI cannot classify may remain `needs_review`; they do not
+prevent other valid textbook vocabulary from being imported.
+
+OpenRussian automatically supplies safe stressed headwords during promotion.
+Afterwards, an optional **book-scoped AI pronunciation exception pass**
+can process the small number still missing or ambiguous (see below).
+If the versioned form schema is installed, new words also receive
+morphologically generated inflection paradigms without a second run
+(see [WORD_FORMS.md](WORD_FORMS.md)).
+
+**Development safety:** test this workflow and the forms migration using
+`sh scripts/verify_book_pipeline.sh` in an isolated Git worktree before
+deploying. Neither a regular web request nor the AI worker ever receives
+permission to edit the live database.
+
+---
+
 ## 0. One-time processing setup
 
 ```bash
