@@ -18,9 +18,14 @@ FORM_PROMPT = """You are a Russian lexicographer reviewing OCR of a textbook.
 For each supplied surface form, choose a genuine Russian word interpretation
 from the exact given morphological analyses, using the supplied contexts.
 Reject OCR artifacts, broken fragments, and letter/phonetic demonstrations.
-When uncertain, choose review. Do not invent lemmas or context.
+Classify genuine lexical abbreviations as entry_type="abbreviation" rather
+than ordinary words. They can be inflecting (вуз) or initialisms (МГУ);
+part of speech remains independent. All-caps headings alone do NOT prove an
+abbreviation. Do not mark an unfamiliar capitalized OCR fragment as one
+without contextual support. When uncertain, choose review.
+Do not invent lemmas or context.
 Return only JSON: {"results":[{"id":1,"decision":"admit|exclude|review",
-"confidence":"high|medium|low","entries":[{"lemma":"...","pos":"..."}],
+"confidence":"high|medium|low","entries":[{"lemma":"...","pos":"...","entry_type":"word|abbreviation"}],
 "reason":"brief"}]}. Return one result per input ID; no tools.
 INPUT:
 """
@@ -79,8 +84,10 @@ def apply_decisions(db, batch: list[dict], response: dict, model: str) -> dict:
         confidence = item.get("confidence", "low")
         entries = []
         if action == "admit":
-            allowed = {(part["lemma"], part["pos"])
-                       for part in requested[key]["analyses"]}
+            allowed = {
+                (part["lemma"], part["pos"], part.get("entry_type", "word"))
+                for part in requested[key]["analyses"]
+            }
             values = item.get("entries")
             if not isinstance(values, list) or not 1 <= len(values) <= 4:
                 action = "review"
@@ -89,8 +96,10 @@ def apply_decisions(db, batch: list[dict], response: dict, model: str) -> dict:
                     if not isinstance(value, dict):
                         action = "review"
                         break
-                    pair = (normalize(str(value.get("lemma", ""))),
-                            str(value.get("pos", "")).upper())
+                    lemma = normalize(str(value.get("lemma", "")))
+                    pos = str(value.get("pos", "")).upper()
+                    entry_type = value.get("entry_type", "word")
+                    pair = (lemma, pos, entry_type)
                     if pair not in allowed or pair in entries:
                         action = "review"
                         break
@@ -112,10 +121,10 @@ def apply_decisions(db, batch: list[dict], response: dict, model: str) -> dict:
                 updated_at=CURRENT_TIMESTAMP WHERE id=?""",
                 (status, json.dumps(entries, ensure_ascii=False), reason, model, review_id))
             if status == "admitted":
-                for lemma, pos in entries:
+                for lemma, pos, entry_type in entries:
                     # Existing lexemes, human decisions, senses and notes are preserved.
-                    db.execute("INSERT OR IGNORE INTO lexemes(lemma,pos) VALUES(?,?)",
-                               (lemma, pos))
+                    db.execute("""INSERT OR IGNORE INTO lexemes(lemma,pos,entry_type)
+                                  VALUES (?,?,?)""", (lemma, pos, entry_type))
                     lexeme_id = db.execute("SELECT id FROM lexemes WHERE lemma=? AND pos=?",
                                            (lemma, pos)).fetchone()[0]
                     occurrences = db.execute("""
