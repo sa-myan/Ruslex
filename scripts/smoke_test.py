@@ -363,6 +363,56 @@ def check_editing_workflow(anonymous, editor) -> None:
     )
 
 
+def check_pronunciation(anonymous, reviewer, editor, connections) -> None:
+    """Exercise the new API on a migrated, disposable dictionary."""
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='lexeme_pronunciations'"
+        )
+        if cursor.fetchone() is None:
+            print("SKIP pronunciation API tests: source snapshot has no stress schema")
+            return
+
+    first = json_request(editor, "post", "/api/lexemes", {
+        "lemma": "пробаслово", "pos": "NOUN",
+    })
+    check(first.status_code == 201, "Create isolated pronunciation test entry")
+    word_id = first.json()["id"]
+    sense = json_request(editor, "post", f"/api/lexemes/{word_id}/senses", {
+        "meaning": "temporary pronunciation test",
+    })
+    check(sense.status_code == 201, "Create pronunciation test sense")
+    sid = sense.json()["id"]
+    url = f"/api/lexemes/{word_id}/pronunciations"
+    payload = {"stressed": "про́баслово", "is_primary": True, "sense_ids": [sid]}
+    denied = json_request(reviewer, "post", url, payload)
+    check(denied.status_code == 403, "Reviewers cannot modify pronunciation")
+    denied = json_request(anonymous, "post", url, payload)
+    check(denied.status_code == 403, "Anonymous pronunciation editing denied")
+    bad = json_request(editor, "post", url, {
+        "stressed": "друго́еслово", "is_primary": True,
+    })
+    check(bad.status_code == 400, "Pronunciation cannot change lexical identity")
+    added = json_request(editor, "post", url, payload)
+    check(added.status_code == 201, "Editor can add stressed headword")
+    reading_id = added.json()["id"]
+    detail = anonymous.get(f"/api/lexemes/{word_id}").json()
+    check(detail["stressed_lemma"] == "про́баслово",
+          "Public entry displays selected stressed reading")
+    check(detail["pronunciations"][0]["sense_ids"] == [sid],
+          "Reading is attached to the correct sense")
+    updated = json_request(editor, "put", f"{url}/{reading_id}", {
+        "stressed": "проба́слово", "is_primary": True, "sense_ids": [],
+    })
+    check(updated.status_code == 200, "Editor can correct stress")
+    check(anonymous.get(f"/api/lexemes/{word_id}").json()["stressed_lemma"]
+          == "проба́слово", "Corrected pronunciation is shown")
+    deleted = json_request(editor, "delete", f"{url}/{reading_id}", {})
+    check(deleted.status_code == 200, "Editor can remove pronunciation")
+    check(anonymous.get(f"/api/lexemes/{word_id}").json()["stressed_lemma"]
+          == "пробаслово", "No reading falls back to original lemma")
+
+
 def check_signup(anonymous, User, SiteOptions) -> None:
     SiteOptions.objects.filter(pk=1).update(registration_open=True)
     signup = json_request(
@@ -386,7 +436,7 @@ def main() -> None:
         (temp_root / "lexicon").mkdir()
         (temp_root / "admin").mkdir()
 
-        source = Path(os.environ.get("DATA_DIR", "/data")) / "lexicon" / "lexicon.db"
+        source = Path(os.environ.get("RUSLEX_SMOKE_LEXICON_SOURCE") or (Path(os.environ.get("DATA_DIR", "/data")) / "lexicon" / "lexicon.db"))
         copy_database(source, temp_root / "lexicon" / "lexicon.db")
         os.environ["DATA_DIR"] = str(temp_root)
         os.environ["DJANGO_ALLOWED_HOSTS"] = "testserver,localhost"
@@ -429,6 +479,7 @@ def main() -> None:
         check_bad_input(editor)
         check_existing_tag_reuse(anonymous, editor, connections)
         check_editing_workflow(anonymous, editor)
+        check_pronunciation(anonymous, reviewer, editor, connections)
         check_signup(anonymous, User, SiteOptions)
         print("ALL DJANGO SMOKE TESTS PASSED; live databases were not touched")
 
