@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 import unittest
 
+from dictionary.abbreviation_display import display as display_abbreviation
 from dictionary.validation import (
     BadRequest,
     external_url,
@@ -14,6 +15,13 @@ from dictionary.validation import (
 
 
 class ValidationTests(unittest.TestCase):
+    def test_abbreviation_display_keeps_initialisms_uppercase(self):
+        self.assertEqual(display_abbreviation("мгу", "abbreviation"), "МГУ")
+        self.assertEqual(display_abbreviation("вуз", "abbreviation"), "вуз")
+        self.assertEqual(display_abbreviation("т. д.", "abbreviation"), "т. д.")
+        self.assertEqual(display_abbreviation("мгу", "word"), "мгу")
+
+
     def test_unknown_fields_are_rejected(self):
         self.assertEqual(fields({"meaning": "word"}, {"meaning"}), {"meaning": "word"})
         for invalid in ({"meaning": "word", "surprise": 1}, ["meaning"], None):
