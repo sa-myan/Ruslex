@@ -123,6 +123,19 @@ class StressAITests(unittest.TestCase):
         self.assertEqual(apply(self.live, self.reference, self.work,
                                self.backups, "repair")["inserted"], 0)
 
+    def test_conflicting_run_reports_exact_setting_without_deleting_batches(self):
+        first = self.vote(1, "писа́ть", "10", [4])
+        with patch("processing.stress_ai.opencode", return_value=first):
+            analyze(self.live, self.reference, self.work, name="settings",
+                    model="provider/model-a", batch_size=1, max_batches=1)
+        batch_files = list((self.work / "stress_ai" / "settings" / "batches").glob("*.json"))
+        self.assertEqual(len(batch_files), 1)
+        original = batch_files[0].read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "batch_size: saved=1, requested=4"):
+            analyze(self.live, self.reference, self.work, name="settings",
+                    model="provider/model-a", batch_size=4, dry_run=True)
+        self.assertEqual(batch_files[0].read_bytes(), original)
+
     def test_missing_verifier_never_auto_applies(self):
         first = self.vote(1, "писа́ть", "10", [4])
         with patch("processing.stress_ai.opencode", return_value=first):
