@@ -10,7 +10,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .openrussian import connect_reference, reference_fingerprint, verify_schema
+from .openrussian import (connect_reference, match_capitalization, reference_fingerprint,
+                         verify_schema, word_rows)
 from .reference_audit import audit_entries
 from .storage import atomic_json, read_database
 
@@ -55,6 +56,42 @@ def _english_glosses(reference: sqlite3.Connection, reference_ids: list[str]) ->
     return dict(previews)
 
 
+def _reading_options(row: dict, references: dict, glosses: dict) -> list[dict]:
+    """Keep the meanings of distinct stressed readings separate.
+
+    OpenRussian POS labels and translations belong to each source record,
+    NOT to a union of possible readings. Never choose a reading here.
+    """
+    grouped: dict[str, dict] = {}
+    for word_id in row["reference_ids"].split(","):
+        word = references.get(word_id)
+        if word is None:
+            continue
+        warnings = list(word.warnings)
+        try:
+            reading = match_capitalization(word.stressed, row["lemma"])
+        except ValueError:
+            reading = word.stressed
+            warnings.append("reference spelling cannot be aligned")
+        option = grouped.setdefault(reading, {
+            "reading": reading,
+            "reference_ids": [],
+            "reference_types": [],
+            "reference_glosses": [],
+            "source_warnings": [],
+        })
+        option["reference_ids"].append(word_id)
+        if word.word_type not in option["reference_types"]:
+            option["reference_types"].append(word.word_type)
+        for gloss in glosses.get(word_id, []):
+            if gloss not in option["reference_glosses"]:
+                option["reference_glosses"].append(gloss)
+        for warning in warnings:
+            if warning not in option["source_warnings"]:
+                option["source_warnings"].append(warning)
+    return sorted(grouped.values(), key=lambda item: item["reading"])
+
+
 def _summaries(rows: list[dict], limit_per_pair: int = 3) -> dict:
     pairs: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for row in rows:
@@ -82,23 +119,23 @@ def _summaries(rows: list[dict], limit_per_pair: int = 3) -> dict:
         ).items())),
         "pos_mismatch_pairs": pair_summaries,
         "ambiguous": [
-            {key: r[key] for key in ("lemma", "ruslex_pos", "stress_candidates",
-                                     "ruslex_meanings", "reference_glosses")}
+            {key: r[key] for key in ("lexeme_id", "lemma", "ruslex_pos", "stress_candidates",
+                                     "ruslex_meanings", "reference_glosses", "reading_options")}
             for r in rows if r["backfill_blocker"] == "ambiguous"
         ],
         "yo_disagreements": [
-            {key: r[key] for key in ("lemma", "ruslex_pos", "stress_candidates",
-                                     "reference_types", "ruslex_meanings", "reference_glosses")}
+            {key: r[key] for key in ("lexeme_id", "lemma", "ruslex_pos", "stress_candidates",
+                                     "reference_types", "ruslex_meanings", "reference_glosses", "reading_options")}
             for r in rows if r["yo_check"] == "different_spelling"
         ],
         "source_warnings": [
-            {key: r[key] for key in ("lemma", "ruslex_pos", "reasons", "stress_candidates")}
+            {key: r[key] for key in ("lexeme_id", "lemma", "ruslex_pos", "reasons", "stress_candidates", "reading_options")}
             for r in rows if r["backfill_blocker"] == "source_warning"
         ],
         "missing_examples": [
-            {key: r[key] for key in ("lemma", "ruslex_pos", "ruslex_meanings")}
+            {key: r[key] for key in ("lexeme_id", "lemma", "ruslex_pos", "ruslex_meanings")}
             for r in rows if r["backfill_blocker"] == "not_found"
-        ][:12],
+        ],
     }
 
 
@@ -131,6 +168,10 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
             if reference_id
         ))
         glosses = _english_glosses(ref, ids)
+        wanted_ids = set(ids)
+        # One scan over source headwords, not a full dictionary scan per case.
+        references = {word.word_id: word for word in word_rows(ref)
+                      if word.word_id in wanted_ids}
         fingerprint = reference_fingerprint(source)
 
     cases: list[dict] = []
@@ -153,6 +194,7 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
             "ruslex_meanings": meanings.get(row["lexeme_id"], []),
             "yo_check": row["yo_check"],
             "reasons": row["reasons"],
+            "reading_options": _reading_options(row, references, glosses),
         })
 
     # The active dictionary is the only coverage denominator. Hidden entries
