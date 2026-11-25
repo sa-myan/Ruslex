@@ -69,7 +69,7 @@ def _select_new_words(workspace: Path) -> list[int]:
         old = {row[0] for row in base.execute("SELECT id FROM lexemes")}
         return [
             row[0] for row in candidate.execute(
-                "SELECT id FROM lexemes WHERE entry_type='word' AND human_status!='hidden' ORDER BY id"
+                "SELECT id FROM lexemes WHERE entry_type IN ('word','abbreviation') AND human_status!='hidden' ORDER BY id"
             ) if row[0] not in old
         ]
 
