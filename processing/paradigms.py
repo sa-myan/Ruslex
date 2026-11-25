@@ -151,7 +151,9 @@ def plan(live: Path, morph=None) -> dict:
         rows = list(_words(db))
         has_table = installed(db)
         existing = (set(r[0] for r in db.execute(
-            "SELECT DISTINCT lexeme_id FROM lexeme_forms")) if has_table else set())
+            """SELECT DISTINCT f.lexeme_id FROM lexeme_forms f
+               JOIN lexemes l ON l.id=f.lexeme_id
+               WHERE l.entry_type='word' AND l.human_status!='hidden'""")) if has_table else set())
     reasons = Counter()
     eligible = 0
     expected_forms = 0
