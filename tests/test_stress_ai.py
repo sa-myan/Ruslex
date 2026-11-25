@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from processing.pronunciations import initialize
-from processing.stress_ai import analyze, plan, apply, automatic_reasons, validate, evidence
+from processing.stress_ai import analyze, plan, apply, automatic_reasons, validate, evidence, parse_approval_ids
 
 
 class StressAITests(unittest.TestCase):
@@ -157,6 +157,75 @@ class StressAITests(unittest.TestCase):
             analyze(self.live, self.reference, self.work, name="settings",
                     model="provider/model-a", batch_size=4, dry_run=True)
         self.assertEqual(batch_files[0].read_bytes(), original)
+
+    def test_explicit_approval_of_validated_single_model_reference_choice(self):
+        first = self.vote(1, "писа́ть", "10", [4])
+        with patch("processing.stress_ai.opencode", return_value=first):
+            analyze(self.live, self.reference, self.work, name="approve_source",
+                    model="provider/model-a", batch_size=1, max_batches=1,
+                    book="Test Book")
+        result = plan(self.live, self.reference, self.work, "approve_source")
+        self.assertEqual(result["remaining"], 0)
+        self.assertEqual(result["manual_approvable"][0]["id"], 1)
+        done = apply(self.live, self.reference, self.work, self.backups,
+                     "approve_source", approved_ids={1})
+        self.assertEqual(done["inserted"], 1)
+        self.assertEqual(done["manually_approved"], 1)
+        with sqlite3.connect(self.live) as db:
+            self.assertEqual(db.execute(
+                "SELECT stressed,source,reference_id,verification "
+                "FROM lexeme_pronunciations"
+            ).fetchone(), ("писа́ть", "openrussian", "10", "verified"))
+
+    def test_unreferenced_suggestion_requires_explicit_approval(self):
+        with sqlite3.connect(self.live) as db:
+            db.execute("INSERT INTO lexemes VALUES(4,'фонетика','NOUN','word','kept')")
+            db.execute("INSERT INTO senses VALUES(7,4,'phonetics',1)")
+        votes = [
+            self.vote(1, "писа́ть", "10", [4]),
+            self.vote(3, "лека́рство", "50", [6], action="select"),
+            self.vote(4, "фонети́ка", "", [7], action="suggest"),
+        ]
+        with patch("processing.stress_ai.opencode", side_effect=votes):
+            analyze(self.live, self.reference, self.work, name="suggestion",
+                    model="provider/model-a", batch_size=1)
+        preview = plan(self.live, self.reference, self.work, "suggestion")
+        self.assertEqual(preview["remaining"], 0)
+        self.assertEqual(preview["auto_eligible"], 0)
+        self.assertEqual(apply(self.live, self.reference, self.work,
+                               self.backups, "suggestion")["inserted"], 0)
+        with self.assertRaisesRegex(ValueError, "not actionable"):
+            apply(self.live, self.reference, self.work, self.backups,
+                  "suggestion", approved_ids={999})
+        result = apply(self.live, self.reference, self.work, self.backups,
+                       "suggestion", approved_ids={4})
+        self.assertEqual(result["inserted"], 1)
+        with sqlite3.connect(self.live) as db:
+            self.assertEqual(db.execute(
+                "SELECT stressed,source,reference_id,verification "
+                "FROM lexeme_pronunciations WHERE lexeme_id=4"
+            ).fetchone(), ("фонети́ка", "manual", "", "verified"))
+            self.assertEqual(db.execute(
+                "SELECT sense_id FROM sense_pronunciations"
+            ).fetchone()[0], 7)
+
+    def test_reject_partial_run_manual_approvals(self):
+        first = self.vote(1, "писа́ть", "10", [4])
+        with patch("processing.stress_ai.opencode", return_value=first):
+            analyze(self.live, self.reference, self.work, name="partial",
+                    model="provider/model-a", batch_size=1, max_batches=1)
+        with self.assertRaisesRegex(RuntimeError, "Finish the AI analysis"):
+            apply(self.live, self.reference, self.work, self.backups,
+                  "partial", approved_ids={1})
+        self.assertEqual(list(self.backups.glob("before-stress-ai-headwords-*.db")), [])
+
+    def test_approval_id_parser_is_strict(self):
+        self.assertEqual(parse_approval_ids(" 1, 23 "), {1, 23})
+        self.assertEqual(parse_approval_ids(""), set())
+        for invalid in ("0", "1,1", "a", "1,abc", "1,,2", "-1"):
+            with self.subTest(value=invalid):
+                with self.assertRaises(ValueError):
+                    parse_approval_ids(invalid)
 
     def test_missing_verifier_never_auto_applies(self):
         first = self.vote(1, "писа́ть", "10", [4])
