@@ -71,7 +71,25 @@ def sources_for_lexeme(db, lexeme_id: int):
     return selected
 
 
-def inputs(db, stage: str, *, book: str | None = None):
+def new_word_ids(workspace: Path) -> set[int]:
+    """New words explicitly selected for a one-promotion import.
+
+    Ordinary legacy enrichment workspaces do not have this file; those still
+    enrich only previously human-kept words.
+    """
+    file = workspace / "new_lexemes.json"
+    if not file.is_file():
+        return set()
+    data = json.loads(file.read_text(encoding="utf-8"))
+    if not isinstance(data, list) or any(type(item) is not int or item < 1 for item in data):
+        raise ValueError("Invalid selected new lexeme IDs")
+    if len(data) != len(set(data)):
+        raise ValueError("Duplicate IDs in selected new words")
+    return set(data)
+
+
+def inputs(db, stage: str, *, book: str | None = None,
+           allow_new_ids: set[int] | None = None):
     """Return only un-enriched kept words, or attested pages, optionally per book.
 
     The book filter prevents a second book from rerunning thousands of already
@@ -85,8 +103,8 @@ def inputs(db, stage: str, *, book: str | None = None):
             "Use a distinct title per imported edition until edition-scoped selection is supported."
         )
     if stage == "lexemes":
-        sql = """SELECT l.id,l.lemma,l.pos FROM lexemes l
-            WHERE l.entry_type='word' AND l.human_status='kept'
+        sql = """SELECT l.id,l.lemma,l.pos,l.human_status FROM lexemes l
+            WHERE l.entry_type='word' AND l.human_status != 'hidden'
             AND NOT EXISTS (SELECT 1 FROM senses s WHERE s.lexeme_id=l.id)
         """
         values = []
@@ -97,7 +115,10 @@ def inputs(db, stage: str, *, book: str | None = None):
                 WHERE lp.lexeme_id=l.id AND b.title=?) """
             values.append(book)
         sql += " ORDER BY l.id"
+        selected_new = allow_new_ids or set()
         for row in db.execute(sql, values):
+            if row["human_status"] != "kept" and row["id"] not in selected_new:
+                continue
             yield {"id": row["id"], "lemma": row["lemma"], "pos": row["pos"],
                    "contexts": sources_for_lexeme(db, row["id"])}
     else:
