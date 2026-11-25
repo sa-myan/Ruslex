@@ -63,6 +63,7 @@ def main(argv=None):
     ai_run = stress_actions.add_parser("ai-run", help="Resumable AI pronunciation exceptions; stages only")
     ai_run.add_argument("name")
     ai_run.add_argument("--model", required=True)
+    ai_run.add_argument("--book", help="Only unresolved headwords attested in this imported book")
     ai_run.add_argument("--verify-model")
     ai_run.add_argument("--batch-size", type=int, default=8)
     ai_run.add_argument("--max-batches", type=int)
@@ -156,7 +157,8 @@ def main(argv=None):
                     LIVE_DB, REFERENCE_DB, WORK_ROOT, name=args.name,
                     model=args.model, verify_model=args.verify_model,
                     batch_size=args.batch_size, max_batches=args.max_batches,
-                    timeout=args.timeout, dry_run=args.dry_run)
+                    timeout=args.timeout, dry_run=args.dry_run,
+                    book=args.book)
             elif args.stress_action == "ai-plan":
                 result = stress_ai_plan(LIVE_DB, REFERENCE_DB, WORK_ROOT, args.name)
             elif args.stress_action == "ai-apply":
