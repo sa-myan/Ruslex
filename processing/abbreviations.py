@@ -70,12 +70,33 @@ def _candidates(db: sqlite3.Connection) -> list[dict]:
         meanings = str(row["meanings"] or "")
         known = name in KNOWN_ABBREVIATIONS or name in DOTTED_ABBREVIATIONS
         definitional = bool(DEFINITION_CUE.search(meanings))
-        if known or definitional:
+        contexts = [
+            text[0] for text in db.execute(
+                """SELECT lp.context FROM lexeme_pages lp
+                   WHERE lp.lexeme_id=? ORDER BY lp.page_id LIMIT 25""",
+                (row["id"],),
+            )
+        ]
+        uppercase = name.upper()
+        uppercase_evidence = [
+            text[:190] for text in contexts
+            if 3 <= len(name) <= 9 and re.search(
+                r"(?<![А-Яа-яЁё])" + re.escape(uppercase)
+                + r"(?![А-Яа-яЁё])", text
+            )
+        ]
+        repeated_caps = len(uppercase_evidence) >= 2
+        if known or definitional or repeated_caps:
             cases.append({
                 "id": row["id"], "lemma": row["lemma"], "pos": row["pos"],
                 "meanings": meanings[:260],
-                "reason": "known_abbreviation" if known else "meaning_suggests_abbreviation",
+                "reason": (
+                    "known_abbreviation" if known else
+                    "meaning_suggests_abbreviation" if definitional else
+                    "repeated_uppercase_in_textbook"
+                ),
                 "automatic": known,
+                "contexts": uppercase_evidence[:2],
             })
     return cases
 
