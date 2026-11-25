@@ -37,7 +37,7 @@ def status(workspace: Path, book: str) -> dict:
         before_ids = {row[0] for row in original.execute("SELECT id FROM lexemes")}
         new_entries = [
             row for row in db.execute(
-                "SELECT id,human_status FROM lexemes WHERE entry_type='word'"
+                "SELECT id,human_status,entry_type FROM lexemes WHERE entry_type IN ('word','abbreviation')"
             ) if row["id"] not in before_ids
         ]
         new_statuses = dict(Counter(row["human_status"] for row in new_entries))
@@ -55,6 +55,7 @@ def status(workspace: Path, book: str) -> dict:
             "pending_forms": remaining, "uncertain_forms": uncertain,
             "distinct_attested_lexemes": attested,
             "new_word_entries": len(new_entries), "new_word_review_status": new_statuses,
+            "new_entry_types": dict(Counter(row["entry_type"] for row in new_entries)),
             "ready_to_plan": remaining == 0,
             "next_step": next_step, "data_mutation": "none",
         }
