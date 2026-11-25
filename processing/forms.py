@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .ocr import normalize
 from .provider import opencode
+from .progress import AIProgress
 from .storage import atomic_json
 
 FORM_PROMPT = """You are a Russian lexicographer reviewing OCR of a textbook.
@@ -153,6 +154,18 @@ def resolve(db, *, workspace: Path, book: str, model: str,
         raise ValueError("Book does not exist in candidate database")
     totals = Counter()
     completed = 0
+    status = "needs_review" if retry else "pending"
+    remaining_initial = db.execute(
+        """SELECT COUNT(*) FROM reviews r JOIN books b ON b.id=r.book_id
+           WHERE b.title=? AND r.status=?""", (book, status)
+    ).fetchone()[0]
+    remaining_now = remaining_initial
+    progress = AIProgress(
+        "forms" + ("/retry" if retry else ""),
+        total=remaining_initial, batch_size=batch_size, max_batches=max_batches
+    )
+    if not dry_run:
+        progress.begin()
     while max_batches is None or completed < max_batches:
         batch = review_batch(db, book, batch_size, retry=retry)
         if not batch:
@@ -164,15 +177,28 @@ def resolve(db, *, workspace: Path, book: str, model: str,
                     db.execute("SELECT COUNT(*) FROM reviews WHERE status='pending' AND book_id "
                                "IN (SELECT id FROM books WHERE title=?)", (book,)).fetchone()[0]}
         prompt = FORM_PROMPT + json.dumps(batch, ensure_ascii=False)
-        response = opencode(prompt, model, executable, timeout)
+        progress.batch_start(number=completed + 1, first_id=batch[0]["id"],
+                             last_id=batch[-1]["id"], count=len(batch))
+        try:
+            response = opencode(prompt, model, executable, timeout)
+        except Exception as exc:
+            progress.failure(exc)
+            raise
         # Model outputs are retained as evidence; a failure never silently writes.
         start, end = batch[0]["id"], batch[-1]["id"]
         path = workspace / "form_reviews" / f"{start:06d}-{end:06d}.json"
         atomic_json(path, {"model": model, "input_ids": [b["id"] for b in batch],
                            "response": response})
-        results = apply_decisions(db, batch, response, model)
+        try:
+            results = apply_decisions(db, batch, response, model)
+        except Exception as exc:
+            progress.failure(exc)
+            raise
         totals.update(results)
         completed += 1
+        progress.saved(len(batch), extra=f"decisions {dict(results)}")
         if retry:
             break  # Do not loop indefinitely over uncertain forms.
+    if not dry_run:
+        progress.finish()
     return {"batches": completed, "results": dict(totals)}
