@@ -25,7 +25,7 @@ class ProgressTests(unittest.TestCase):
         self.assertIn("resuming 4 completed", displayed)
         self.assertIn("39 remaining", displayed)
         self.assertIn("batch 2/11 started", displayed)
-        self.assertIn("correction", displayed.lower().replace("repairs", "correction"))
+        self.assertIn("primary validation failed (1/2 repairs)", displayed)
         self.assertIn("8/43 items", displayed)
         self.assertIn("35 remaining", displayed)
         self.assertIn("paused", displayed)
