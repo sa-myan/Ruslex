@@ -17,6 +17,7 @@ from dictionary.validation import (
 class ValidationTests(unittest.TestCase):
     def test_abbreviation_display_keeps_initialisms_uppercase(self):
         self.assertEqual(display_abbreviation("мгу", "abbreviation"), "МГУ")
+        self.assertEqual(display_abbreviation("ввэр-1200", "abbreviation"), "ВВЭР-1200")
         self.assertEqual(display_abbreviation("вуз", "abbreviation"), "вуз")
         self.assertEqual(display_abbreviation("т. д.", "abbreviation"), "т. д.")
         self.assertEqual(display_abbreviation("мгу", "word"), "мгу")
