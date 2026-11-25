@@ -144,30 +144,46 @@ def initialize(live: Path, backups: Path) -> dict:
 
 
 def plan(live: Path, morph=None) -> dict:
+    """Exact deterministic preview, including abstentions and row count."""
+    morph = morph or analyzer()
     with read_database(live) as db:
         _check(db)
         rows = list(_words(db))
         has_table = installed(db)
         existing = (set(r[0] for r in db.execute(
             "SELECT DISTINCT lexeme_id FROM lexeme_forms")) if has_table else set())
+    reasons = Counter()
+    eligible = 0
+    expected_forms = 0
+    for row in rows:
+        if row["id"] in existing:
+            continue
+        forms, reason = generate(row["lemma"], row["pos"], morph)
+        if reason:
+            reasons[reason] += 1
+        else:
+            eligible += 1
+            expected_forms += len(forms)
     return {"schema_installed": has_table, "visible_headwords": len(rows),
             "existing_form_entries": len(existing),
-            "eligible_for_generation": sum(row["id"] not in existing for row in rows),
-            "data_mutation": "none"}
+            "eligible_headwords": eligible, "expected_form_rows": expected_forms,
+            "skipped": dict(reasons), "data_mutation": "none"}
 
 
 def backfill(live: Path, backups: Path, morph=None) -> dict:
-    before = plan(live)
+    morph = morph or analyzer()
+    before = plan(live, morph)
     if not before["schema_installed"]:
         raise RuntimeError("Run forms init --confirm first")
-    if not before["eligible_for_generation"]:
+    if not before["eligible_headwords"]:
         return {**before, "generated": {}, "data_mutation": "none"}
     backup = _backup(live, backups, "forms-backfill")
-    morph = morph or analyzer()
     with write_database(live) as db:
         db.execute("BEGIN IMMEDIATE")
         generated = _insert(db, morph)
         _check(db)
+    if generated.get("forms_added", 0) != before["expected_form_rows"]:
+        raise RuntimeError("Form generation changed since preview")
     return {**before, "generated": generated,
             "backup": str(backup),
             "data_mutation": "forms_inserted" if generated.get("forms_added", 0) else "none"}
