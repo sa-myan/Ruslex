@@ -25,6 +25,8 @@ class FakeMorph:
             return [self.one(lemma, ["дом", "дома", "дому", "домом"])]
         if lemma == "мама":
             return [self.one(lemma, ["мама", "мамы", "маме", "маму"])]
+        if lemma == "папа":
+            return [self.one(lemma, ["папа", "папы", "папе", "папу"])]
         return []
 
     def one(self, lemma, forms):
@@ -89,6 +91,25 @@ class ParadigmTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM lexeme_forms WHERE lexeme_id=3"
             ).fetchone()[0], 0)
             self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
+    def test_lemma_change_keeps_old_forms_historical_and_generates_new(self):
+        initialize(self.live, self.backups)
+        backfill(self.live, self.backups, self.morph)
+        with sqlite3.connect(self.live) as db:
+            db.execute("UPDATE lexemes SET lemma='папа' WHERE id=1")
+        preview = plan(self.live, self.morph)
+        self.assertEqual(preview["eligible_headwords"], 1)
+        result = backfill(self.live, self.backups, self.morph)
+        self.assertEqual(result["generated"]["forms_added"], 4)
+        with sqlite3.connect(self.live) as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM lexeme_forms WHERE lexeme_id=1"
+            ).fetchone()[0], 8)
+            self.assertEqual(db.execute(
+                """SELECT COUNT(*) FROM lexeme_forms f JOIN lexemes l
+                   ON l.id=f.lexeme_id WHERE f.lexeme_id=1
+                   AND f.lemma_at_generation=l.lemma AND f.pos_at_generation=l.pos"""
+            ).fetchone()[0], 4)
 
     def test_new_word_autofill_restricted_to_new_ids(self):
         initialize(self.live, self.backups)
