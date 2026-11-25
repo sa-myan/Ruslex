@@ -98,6 +98,20 @@ class StressAITests(unittest.TestCase):
         self.assertNotEqual(before_headwords, self.live.read_bytes())
         self.assertTrue(list(self.backups.glob("before-stress-ai-headwords-*.db")))
 
+    def test_invalid_model_json_is_retried_without_losing_work(self):
+        good = self.vote(1, "писа́ть", "10", [4])
+        malformed = {"results": [{"id": 1, "action": "select"}]}
+        with patch("processing.stress_ai.opencode", side_effect=[malformed, good]) as model:
+            outcome = analyze(self.live, self.reference, self.work, name="repair",
+                              model="provider/model-a", batch_size=1, max_batches=1)
+        self.assertEqual(model.call_count, 2)
+        self.assertEqual(outcome["completed"], 1)
+        self.assertEqual(outcome["auto_eligible"], 0)
+        rejected = list((self.work / "stress_ai" / "repair" / "rejected").glob("*.json"))
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(apply(self.live, self.reference, self.work,
+                               self.backups, "repair")["inserted"], 0)
+
     def test_missing_verifier_never_auto_applies(self):
         first = self.vote(1, "писа́ть", "10", [4])
         with patch("processing.stress_ai.opencode", return_value=first):
