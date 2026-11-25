@@ -20,13 +20,13 @@ from .storage import atomic_json
 FIELDS = (
     "lexeme_id", "lemma", "pos", "status", "proposed_spelling",
     "stress_candidates", "reference_ids", "reference_types", "reasons",
-    "yo_check", "safe_backfill", "backfill_blocker",
+    "yo_check", "safe_backfill", "backfill_blocker", "backfill_method",
 )
 
 
 def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) -> list[dict]:
     lexemes = list(lexicon.execute(
-        "SELECT id,lemma,pos FROM lexemes WHERE entry_type='word' ORDER BY id"
+        "SELECT id,lemma,pos FROM lexemes WHERE entry_type='word' AND human_status != 'hidden' ORDER BY id"
     ))
     wanted = {lookup_key(row["lemma"]) for row in lexemes}
     reference_by_key: dict[str, list[ReferenceWord]] = defaultdict(list)
@@ -77,19 +77,45 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
         if len(candidates) > 1 and len(stress_forms) == 1:
             reasons.append("multiple reference entries share a reading")
 
-        # A deterministic backfill must have an unambiguous validated reading,
-        # matching ё spelling, and known matching reference POS.
-        compatible_pos = bool(candidates) and all(
-            pos_code(w.word_type) == {"INFN": "VERB", "ADJS": "ADJF", "COMP": "ADJF"}.get(lexeme["pos"], lexeme["pos"])
-            for w in candidates
+        # POS agreement is preferable, but the OpenRussian "other" label is
+        # frequently used for genuine pronouns, particles, numerals, etc.
+        # A consensus fallback is about *pronunciation only*, never POS.
+        normalized_pos = {"INFN": "VERB", "ADJS": "ADJF", "COMP": "ADJF"}.get(
+            lexeme["pos"], lexeme["pos"]
         )
-        safe_backfill = (status == "candidate" and yo_check != "different_spelling"
-                         and compatible_pos and bool(stress_forms))
+        compatible_pos = bool(candidates) and all(
+            pos_code(w.word_type) == normalized_pos for w in candidates
+        )
+        # Check *every* lookup match, not only POS-filtered candidates. An
+        # excluded homograph with a different stress forbids this fallback.
+        all_match_forms = []
+        all_match_valid = bool(all_matches)
+        for word in all_matches:
+            if word.warnings:
+                all_match_valid = False
+            try:
+                all_match_forms.append(match_capitalization(word.stressed, spelling))
+            except ValueError:
+                all_match_valid = False
+        reference_consensus = (
+            all_match_valid
+            and len(set(all_match_forms)) == 1
+            and plain_spelling(all_match_forms[0]).casefold() == spelling.casefold()
+            and yo_check != "different_spelling"
+        )
+        safe_backfill = (
+            status == "candidate" and bool(stress_forms)
+            and yo_check != "different_spelling"
+            and (compatible_pos or reference_consensus)
+        )
+        backfill_method = (
+            "pos_match" if safe_backfill and compatible_pos else
+            "reference_consensus" if safe_backfill else ""
+        )
         backfill_blocker = (
             "" if safe_backfill else
             "review_yo" if status == "candidate" and yo_check == "different_spelling" else
-            "unverified_reference_pos" if status == "candidate" and not compatible_pos else
-            "no_usable_stress" if status == "candidate" and not stress_forms else status
+            "unverified_reference_pos" if status == "candidate" else status
         )
 
         rows.append({
@@ -103,6 +129,7 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
             "yo_check": yo_check,
             "safe_backfill": safe_backfill,
             "backfill_blocker": backfill_blocker,
+            "backfill_method": backfill_method,
         })
     return rows
 

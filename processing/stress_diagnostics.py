@@ -74,7 +74,12 @@ def _summaries(rows: list[dict], limit_per_pair: int = 3) -> dict:
     ]
     return {
         "unresolved_count": len(rows),
-        "blocked": dict(sorted(Counter(row["backfill_blocker"] for row in rows).items())),
+        "blocked": dict(sorted(Counter(
+            row["backfill_blocker"] for row in rows if row["backfill_blocker"]
+        ).items())),
+        "eligible_for_import": dict(sorted(Counter(
+            row["backfill_method"] for row in rows if row["backfill_method"]
+        ).items())),
         "pos_mismatch_pairs": pair_summaries,
         "ambiguous": [
             {key: r[key] for key in ("lemma", "ruslex_pos", "stress_candidates",
@@ -104,7 +109,11 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lexeme_pronunciations'"
         ).fetchone()
         existing = (
-            {r[0] for r in db.execute("SELECT DISTINCT lexeme_id FROM lexeme_pronunciations")}
+            {r[0] for r in db.execute(
+                """SELECT DISTINCT p.lexeme_id FROM lexeme_pronunciations p
+                   JOIN lexemes l ON l.id=p.lexeme_id
+                   WHERE l.entry_type='word' AND l.human_status != 'hidden'"""
+            )}
             if existing_table else set()
         )
         statuses = {
@@ -132,6 +141,7 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
             "lemma": row["lemma"],
             "ruslex_pos": row["pos"],
             "human_status": statuses[row["lexeme_id"]],
+            "backfill_method": row["backfill_method"],
             "status": row["status"],
             "backfill_blocker": row["backfill_blocker"],
             "stress_candidates": row["stress_candidates"],
@@ -145,32 +155,21 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
             "reasons": row["reasons"],
         })
 
-    # Hidden means excluded from normal dictionary browsing, but it is not
-    # a deletion or an assertion that the entry is a proper name.
-    visible_cases = [row for row in cases if row["human_status"] != "hidden"]
-    hidden_cases = [row for row in cases if row["human_status"] == "hidden"]
+    # The active dictionary is the only coverage denominator. Hidden entries
+    # are logically deleted and are not in audit_entries() or this report.
+    active_ids = {
+        lexeme_id for lexeme_id, status in statuses.items()
+        if status != "hidden"
+    }
     overview = _summaries(cases)
-    visible = _summaries(visible_cases)
-    hidden = _summaries(hidden_cases)
-    visible_ids = {lexeme_id for lexeme_id, status in statuses.items()
-                   if status != "hidden"}
-    hidden_ids = set(statuses) - visible_ids
-    visibility = {
-        "visible": {
-            "headwords": len(visible_ids),
-            "stored_pronunciations": len(existing & visible_ids),
-            "unresolved": len(visible_cases),
-            "blocked": visible["blocked"],
-        },
-        "hidden": {
-            "headwords": len(hidden_ids),
-            "stored_pronunciations": len(existing & hidden_ids),
-            "unresolved": len(hidden_cases),
-            "blocked": hidden["blocked"],
-        },
-        "unresolved_by_review_status": dict(sorted(
-            Counter(row["human_status"] for row in cases).items()
-        )),
+    coverage = {
+        "headwords": len(active_ids),
+        "stored_pronunciations": len(existing),
+        "unresolved": len(cases),
+        "blocked": overview["blocked"],
+        "eligible_for_import": overview["eligible_for_import"],
+        "coverage_pct": round(100 * len(existing) / len(active_ids), 1)
+        if active_ids else 100.0,
     }
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     directory = work_root / "stress_diagnostics" / stamp
@@ -180,30 +179,25 @@ def diagnose(live: Path, source: Path, work_root: Path) -> dict:
         "source_sha256": fingerprint,
         "already_have_pronunciations": len(existing),
         **overview,
-        "visibility": visibility,
-        "visible_priority": visible,
-        "hidden_summary": hidden,
+        "active_dictionary": coverage,
         "all_cases": cases,
         "data_mutation": "none",
     })
-    # The terminal is an actionable, visible-only queue. The JSON preserves
-    # every hidden entry and the original all-entry diagnostic for auditing.
     return {
+        "active_dictionary": coverage,
         "unresolved_count": len(cases),
         "already_have_pronunciations": len(existing),
         "reference_sha256": fingerprint,
         "report": str(report),
-        "visibility": visibility,
         "blocked": overview["blocked"],
-        "blocked_all": overview["blocked"],
+        "eligible_for_import": overview["eligible_for_import"],
         "pos_mismatch_pairs": [
             {**row, "examples": row["examples"][:2]}
-            for row in visible["pos_mismatch_pairs"][:18]
+            for row in overview["pos_mismatch_pairs"][:18]
         ],
-        "ambiguous": visible["ambiguous"][:13],
-        "yo_disagreements": visible["yo_disagreements"],
-        "source_warnings": visible["source_warnings"][:11],
-        "visible_missing_examples": visible["missing_examples"],
-        "hidden_missing_examples": hidden["missing_examples"][:8],
+        "ambiguous": overview["ambiguous"][:13],
+        "yo_disagreements": overview["yo_disagreements"],
+        "source_warnings": overview["source_warnings"][:11],
+        "missing_examples": overview["missing_examples"],
         "data_mutation": "none",
     }

@@ -145,17 +145,37 @@ counts (Ruslex POS vs. OpenRussian `type`), selected Russian/English glosses,
 ambiguous readings, ё disagreements, reference warnings, and sample entries
 missing from the source. The terminal output is intentionally shorter.
 
-The diagnostic also groups unresolved headwords by their existing
-`human_status` review decision. The `visibility.visible` and
-`visibility.hidden` groups report their total headwords, stored
-pronunciations, remaining unresolved entries, and blockers. The terminal
-shows only visible items in its detailed examples (including
-`visible_missing_examples`); the JSON retains **all** hidden cases
-with their review statuses. A hidden entry is not assumed to be a
-proper noun — visibility comes exclusively from Ruslex's saved status.
+The diagnostic considers only active entries. Hidden entries are omitted
+from headword counts, unresolved cases and all examples. The terminal
+reports `active_dictionary` coverage and `missing_examples`; the JSON
+contains only the active unresolved entries.
 
 This command **does not** change matching rules or import any readings.
 `other`, `expression` and mismatching known POS values remain unresolved
 until there is concrete evidence that a proposed rule is linguistically safe.
 The diagnostic does not send material to an LLM or require an API key.
 
+
+## Active-only coverage and pronunciation consensus
+
+Ruslex entries with `human_status='hidden'` are treated as logically
+**deleted** for pronunciation work. They are excluded from audit, lookup
+matching against Ruslex, coverage denominators, diagnostics and all future
+OpenRussian automatic imports. Their existing database records and any
+pronunciations are retained so hiding and unhiding remains reversible.
+
+Where a valid OpenRussian headword has an unambiguous pronunciation but a
+nonmatching or generic reference POS such as `other`, a second deterministic
+`reference_consensus` route is available. It requires **every** matching
+reference record (before any POS filtering) to have exactly one identical,
+well-formed stressed spelling; it excludes ё disagreements, missing stress,
+source warnings, and conflicting readings. It never rewrites Ruslex POS or
+infers semantics. The regular `pos_match` route is retained. Both produce
+`source_backed` provenance, not human verification.
+
+A one-time backfill may safely add consensus readings for visible headwords
+that still lack pronunciation records. Run `./process.sh stress plan` and
+`./process.sh stress rehearse` first, and verify the extra number of
+`reference_consensus` readings before executing the production backfill.
+The existing 1,147 source-backed entries will not be rewritten, even if a
+word has subsequently been hidden.
