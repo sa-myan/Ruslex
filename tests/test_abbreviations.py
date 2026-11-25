@@ -26,7 +26,7 @@ class FakeMorph:
         return [
             SimpleNamespace(normal_form=surface,
                             tag=SimpleNamespace(POS="NOUN"),
-                            is_known=True),
+                            is_known=surface not in {"юнфп", "ввэр-1200"}),
         ]
 
 
@@ -110,6 +110,50 @@ class AbbreviationTests(unittest.TestCase):
         self.assertTrue(any(x["entry_type"] == "abbreviation" for x in unfamiliar))
         ordinary = parse_forms("дом", FakeMorph())
         self.assertFalse(any(x["entry_type"] == "abbreviation" for x in ordinary))
+
+    def test_uppercase_textbook_headings_do_not_create_review_candidates(self):
+        """Reported real false positives: УРОК, ПАРК and ВСЕГДА."""
+        with sqlite3.connect(self.live) as db:
+            db.executescript("""
+                INSERT INTO lexemes(id,lemma,pos,human_status)
+                VALUES (8,'урок','NOUN','kept'),
+                       (9,'парк','NOUN','kept'),
+                       (10,'всегда','ADVB','kept');
+                INSERT INTO senses(lexeme_id,meaning)
+                VALUES (8,'lesson'),(9,'park'),(10,'always');
+                INSERT INTO pages(id,book_id,pdf_page,printed_page,markdown,source)
+                VALUES
+                    (8,1,8,8,'# УРОК 1 первый\\nРусский алфавит','fixture'),
+                    (9,1,9,9,'# УРОК 2\\nНовые слова','fixture'),
+                    (10,1,10,10,'# ИЗМАЙЛОВСКИЙ ПАРК\\nВот Измайловский парк','fixture'),
+                    (11,1,11,11,'# ИЗМАЙЛОВСКИЙ ПАРК\\nЧитайте','fixture'),
+                    (12,1,12,12,'# УЧИТЬСЯ ВСЕГДА ПРИГОДИТСЯ\\nПрочитайте','fixture'),
+                    (13,1,13,13,'# УЧИТЬСЯ ВСЕГДА ПРИГОДИТСЯ\\nЧитаем','fixture');
+                INSERT INTO lexeme_pages(lexeme_id,page_id,surface,context,count)
+                VALUES
+                    (8,8,'урок','# УРОК 1',1),
+                    (8,9,'урок','# УРОК 2',1),
+                    (9,10,'парк','# ИЗМАЙЛОВСКИЙ ПАРК',1),
+                    (9,11,'парк','# ИЗМАЙЛОВСКИЙ ПАРК',1),
+                    (10,12,'всегда','# УЧИТЬСЯ ВСЕГДА ПРИГОДИТСЯ',1),
+                    (10,13,'всегда','# УЧИТЬСЯ ВСЕГДА ПРИГОДИТСЯ',1);
+            """)
+        preview = plan(self.live)
+        all_candidates = {
+            case["lemma"] for cases in
+            (preview["automatic_candidates"], preview["review_candidates"])
+            for case in cases
+        }
+        self.assertTrue({"урок", "парк", "всегда"}.isdisjoint(all_candidates))
+        self.assertIn("мгу", all_candidates)
+
+    def test_known_words_are_not_marked_abbreviations_by_uppercase_only(self):
+        self.assertFalse(any(option["entry_type"] == "abbreviation"
+                             for option in parse_forms("урок", FakeMorph(),
+                                                       uppercase_hint=True)))
+        self.assertTrue(any(option["entry_type"] == "abbreviation"
+                            for option in parse_forms("юнфп", FakeMorph(),
+                                                      uppercase_hint=True)))
 
     def test_ai_can_admit_abbreviation_without_changing_existing_entry(self):
         initialize(self.live, self.backups)
