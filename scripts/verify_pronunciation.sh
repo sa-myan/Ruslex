@@ -42,6 +42,26 @@ printf '\n== Read-only OpenRussian info ==\n'
 ./process.sh reference info
 
 printf '\n== Rehearse stress migration/backfill on disposable DB ==\n'
-./process.sh stress rehearse
+rehearsal_output=$(./process.sh stress rehearse)
+printf '%s\n' "$rehearsal_output"
+rehearsal_name=$(printf '%s\n' "$rehearsal_output" |
+  sed -n 's@.*"rehearsal_path": "/work/stress_rehearsals/\([0-9-]*\)".*@\1@p' |
+  tail -n 1)
+case "$rehearsal_name" in
+  ''|*[!0-9-]*) echo "Could not safely identify the isolated rehearsal database" >&2; exit 1 ;;
+esac
+rehearsal_db="$data_root/processing/stress_rehearsals/$rehearsal_name/lexicon.db"
+if [ ! -r "$rehearsal_db" ]; then
+  echo "Rehearsal database is missing: $rehearsal_db" >&2
+  exit 1
+fi
 
-printf '\nPASS: checks completed without touching production data or web container.\n'
+printf '\n== Django API tests against migrated rehearsal copy ==\n'
+docker run --rm --network none \
+  -v "$data_root:/data:ro" \
+  -e DATA_DIR=/data \
+  -e RUSLEX_SMOKE_LEXICON_SOURCE="/data/processing/stress_rehearsals/$rehearsal_name/lexicon.db" \
+  --entrypoint python \
+  ruslex-pronunciation-check:local /app/scripts/smoke_test.py
+
+printf '\nPASS: pre-migration and post-migration checks succeeded. Live data and web container untouched.\n'
