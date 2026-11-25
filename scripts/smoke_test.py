@@ -443,6 +443,49 @@ def check_pronunciation(anonymous, reviewer, editor, connections) -> None:
           == "пробаслово", "No reading falls back to original lemma")
 
 
+def check_abbreviations(anonymous, editor, connections) -> None:
+    """Abbreviations work as a third entry type on the migrated snapshot."""
+    from django.http import QueryDict
+    from dictionary import queries
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute("SELECT sql FROM sqlite_master WHERE name='lexemes'")
+        ddl = cursor.fetchone()[0]
+    if "'abbreviation'" not in ddl:
+        print("SKIP abbreviation integration: dictionary has not been migrated")
+        return
+    metadata = anonymous.get("/api/meta").json()
+    check("abbreviation" in metadata["entry_types"],
+          "API advertises abbreviation category")
+
+    created = json_request(editor, "post", "/api/lexemes", {
+        "lemma": "РЖДПРИМЕР", "pos": "NOUN", "entry_type": "abbreviation",
+    })
+    check(created.status_code == 201, "Editor can create abbreviation")
+    abbr_id = created.json()["id"]
+    detail = anonymous.get(f"/api/lexemes/{abbr_id}").json()
+    check(detail["entry_type"] == "abbreviation"
+          and detail["stressed_lemma"] == "РЖДПРИМЕР",
+          "Abbreviation retains kind and conventional uppercase display")
+    listing = queries.search(QueryDict("entry_type=abbreviation&q=рждпример"))
+    check(abbr_id in [entry["id"] for entry in listing["items"]],
+          "Abbreviations are searchable independently")
+
+    expression = json_request(editor, "post", "/api/lexemes", {
+        "lemma": "сказать пример", "pos": "OTHER",
+        "entry_type": "expression",
+    })
+    check(expression.status_code == 201, "Create temporary expression for abbreviation link")
+    expr_id = expression.json()["id"]
+    constituent = json_request(
+        editor, "post", f"/api/lexemes/{expr_id}/components",
+        {"word_id": abbr_id, "position": 1, "surface": "РЖДПРИМЕР", "notes": ""}
+    )
+    check(constituent.status_code == 201,
+          "Expressions can contain abbreviation entries")
+    check(anonymous.get(f"/api/lexemes/{expr_id}").status_code == 200,
+          "Expression with abbreviation renders normally")
+
+
 def check_signup(anonymous, User, SiteOptions) -> None:
     SiteOptions.objects.filter(pk=1).update(registration_open=True)
     signup = json_request(
@@ -511,6 +554,7 @@ def main() -> None:
         check_existing_tag_reuse(anonymous, editor, connections)
         check_editing_workflow(anonymous, editor)
         check_pronunciation(anonymous, reviewer, editor, connections)
+        check_abbreviations(anonymous, editor, connections)
         check_signup(anonymous, User, SiteOptions)
         print("ALL DJANGO SMOKE TESTS PASSED; live databases were not touched")
 
