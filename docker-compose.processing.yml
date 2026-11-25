@@ -27,6 +27,16 @@ services:
       - "${DATA_ROOT}/lexicon:/live:ro"
       - "${DATA_ROOT}/backups:/backups:ro"
       - "${DATA_ROOT}/processing/state:/state"
+  rehearsal:
+    <<: *processing
+    # Disposable stress tests: no network, no AI credentials, no live writes.
+    network_mode: none
+    volumes:
+      - "${DATA_ROOT}/processing:/work"
+      - "${DATA_ROOT}/reference:/reference:ro"
+      - "${DATA_ROOT}/lexicon:/live:ro"
+      - "${DATA_ROOT}/backups:/backups:ro"
+
   promoter:
     <<: *processing
     # No network or model credentials during the only operation writing live.
