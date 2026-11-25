@@ -93,6 +93,7 @@ class ParadigmTests(unittest.TestCase):
     def test_new_word_autofill_restricted_to_new_ids(self):
         initialize(self.live, self.backups)
         with sqlite3.connect(self.live) as db:
+            db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
             result = for_new_lexemes(db, {2, 5}, self.morph)
             db.commit()
