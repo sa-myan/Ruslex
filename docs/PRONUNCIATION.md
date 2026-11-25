@@ -145,6 +145,15 @@ counts (Ruslex POS vs. OpenRussian `type`), selected Russian/English glosses,
 ambiguous readings, ё disagreements, reference warnings, and sample entries
 missing from the source. The terminal output is intentionally shorter.
 
+The diagnostic also groups unresolved headwords by their existing
+`human_status` review decision. The `visibility.visible` and
+`visibility.hidden` groups report their total headwords, stored
+pronunciations, remaining unresolved entries, and blockers. The terminal
+shows only visible items in its detailed examples (including
+`visible_missing_examples`); the JSON retains **all** hidden cases
+with their review statuses. A hidden entry is not assumed to be a
+proper noun — visibility comes exclusively from Ruslex's saved status.
+
 This command **does not** change matching rules or import any readings.
 `other`, `expression` and mismatching known POS values remain unresolved
 until there is concrete evidence that a proposed rule is linguistically safe.
