@@ -6,6 +6,7 @@ retaining every existing audit, authorization and append-only promotion guard.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from .book_status import status as book_status
@@ -17,6 +18,10 @@ from .storage import atomic_json, prepare, read_database, write_database, staged
 from .workflow import run as enrich_run
 
 SETTINGS_FILE = "book-run-settings.json"
+
+
+def announce(stage: str, message: str) -> None:
+    print(f"[AI book/{stage}] {message}", file=sys.stderr, flush=True)
 
 
 def start(live: Path, workspace: Path, source: Path, *,
@@ -106,6 +111,8 @@ def advance(live: Path, workspace: Path, *, book: str | None = None,
     if (workspace / "promotion.json").exists():
         raise RuntimeError("Workspace was already promoted; create a new workspace")
 
+    announce("resume", f"{summary['pending_forms']} pending OCR forms; "
+             f"book {book!r}; model {model}")
     forms_outcome = None
     if summary["pending_forms"]:
         with (read_database if dry_run else write_database)(workspace / "candidate.db") as db:
@@ -128,6 +135,7 @@ def advance(live: Path, workspace: Path, *, book: str | None = None,
                 "live_mutation": "none"}
 
     stage = workspace / "enrichment"
+    announce("enrichment", "OCR forms resolved; preparing vocabulary and page batches")
     if not (stage / "manifest.json").exists():
         # Freeze the new-word selection before enrichment's immutable snapshot.
         stage.mkdir(parents=True, exist_ok=True)
@@ -141,6 +149,7 @@ def advance(live: Path, workspace: Path, *, book: str | None = None,
     for name, count in (("lexemes", 4), ("pages", 2)):
         if name == "pages" and not expressions:
             continue
+        announce("enrichment", f"stage {name} starting/resuming")
         progress = enrich_run(
             stage, stage=name, model=model, executable=executable,
             batch_size=count, max_batches=max_batches, timeout=timeout,
@@ -164,6 +173,7 @@ def advance(live: Path, workspace: Path, *, book: str | None = None,
     else:
         applied = {"already_applied": True}
 
+    announce("complete", "AI processing complete; review the promotion plan")
     return {"stage": "ready_for_promotion", "form_review": forms_outcome,
             "enrichment": applied,
             "status": book_status(workspace, book),
