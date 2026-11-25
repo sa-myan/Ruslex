@@ -13,6 +13,7 @@ inside a web request.
 | Install, build, deploy or roll back the website | [Deployment](docs/DEPLOYMENT.md) |
 | Import a new textbook in one isolated workspace | [Book processing](docs/BOOK_PROCESSING.md) |
 | Generate and search Russian inflected forms | [Word forms](docs/WORD_FORMS.md) |
+| Recognize abbreviations and review initialisms | [Abbreviations](docs/ABBREVIATIONS.md) |
 | Back up, restore, disable, troubleshoot | [Operations](docs/OPERATIONS.md) |
 | Understand code and data ownership | [Architecture](docs/ARCHITECTURE.md) |
 | Review stress and ё migration | [Pronunciation](docs/PRONUNCIATION.md) |
