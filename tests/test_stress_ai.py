@@ -123,6 +123,28 @@ class StressAITests(unittest.TestCase):
         self.assertEqual(apply(self.live, self.reference, self.work,
                                self.backups, "repair")["inserted"], 0)
 
+    def test_failed_provider_run_can_switch_model_when_no_batches_exist(self):
+        with patch("processing.stress_ai.opencode",
+                   side_effect=RuntimeError("Model unavailable")):
+            with self.assertRaisesRegex(RuntimeError, "Model unavailable"):
+                analyze(self.live, self.reference, self.work, name="no_route",
+                        model="provider/not-available", batch_size=1,
+                        max_batches=1)
+        root = self.work / "stress_ai" / "no_route"
+        self.assertTrue((root / "manifest.json").exists())
+        self.assertFalse(list((root / "batches").glob("*.json")))
+        correct = self.vote(1, "писа́ть", "10", [4])
+        with patch("processing.stress_ai.opencode", return_value=correct):
+            result = analyze(self.live, self.reference, self.work,
+                             name="no_route", model="provider/available",
+                             batch_size=1, max_batches=1)
+        self.assertEqual(result["completed"], 1)
+        self.assertEqual(result["auto_eligible"], 0)
+        import json
+        self.assertEqual(json.loads(
+            (root / "manifest.json").read_text(encoding="utf-8")
+        )["model"], "provider/available")
+
     def test_conflicting_run_reports_exact_setting_without_deleting_batches(self):
         first = self.vote(1, "писа́ть", "10", [4])
         with patch("processing.stress_ai.opencode", return_value=first):
