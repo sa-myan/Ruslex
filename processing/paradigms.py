@@ -30,13 +30,15 @@ VALUES (1,datetime('now'));
 CREATE TABLE IF NOT EXISTS lexeme_forms(
     id INTEGER PRIMARY KEY,
     lexeme_id INTEGER NOT NULL REFERENCES lexemes(id) ON DELETE CASCADE,
+    lemma_at_generation TEXT NOT NULL,
+    pos_at_generation TEXT NOT NULL,
     form TEXT NOT NULL,
     form_key TEXT NOT NULL,
     grammemes TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'pymorphy3'
         CHECK (source IN ('pymorphy3','manual','openrussian')),
     created_at TEXT NOT NULL,
-    UNIQUE(lexeme_id,form,grammemes)
+    UNIQUE(lexeme_id,lemma_at_generation,pos_at_generation,form,grammemes)
 );
 CREATE INDEX IF NOT EXISTS idx_lexeme_forms_search ON lexeme_forms(form_key);
 CREATE INDEX IF NOT EXISTS idx_lexeme_forms_entry ON lexeme_forms(lexeme_id);
@@ -111,7 +113,11 @@ def _insert(db: sqlite3.Connection, morph, lexeme_ids: set[int] | None = None) -
     counts = Counter()
     timestamp = datetime.now(timezone.utc).isoformat()
     for row in _words(db, lexeme_ids):
-        if db.execute("SELECT 1 FROM lexeme_forms WHERE lexeme_id=?", (row["id"],)).fetchone():
+        if db.execute(
+            """SELECT 1 FROM lexeme_forms
+               WHERE lexeme_id=? AND lemma_at_generation=? AND pos_at_generation=?""",
+            (row["id"], row["lemma"], row["pos"])
+        ).fetchone():
             counts["existing_entries_skipped"] += 1
             continue
         forms, reason = generate(row["lemma"], row["pos"], morph)
@@ -120,9 +126,9 @@ def _insert(db: sqlite3.Connection, morph, lexeme_ids: set[int] | None = None) -
             continue
         db.executemany(
             """INSERT OR IGNORE INTO lexeme_forms
-               (lexeme_id,form,form_key,grammemes,source,created_at)
-               VALUES (?,?,?,?,'pymorphy3',?)""",
-            [(row["id"], form, fold(form), grammemes, timestamp)
+               (lexeme_id,lemma_at_generation,pos_at_generation,form,form_key,grammemes,source,created_at)
+               VALUES (?,?,?,?,?,?,'pymorphy3',?)""",
+            [(row["id"], row["lemma"], row["pos"], form, fold(form), grammemes, timestamp)
              for form, grammemes in forms],
         )
         counts["entries_generated"] += 1
@@ -153,7 +159,8 @@ def plan(live: Path, morph=None) -> dict:
         existing = (set(r[0] for r in db.execute(
             """SELECT DISTINCT f.lexeme_id FROM lexeme_forms f
                JOIN lexemes l ON l.id=f.lexeme_id
-               WHERE l.entry_type='word' AND l.human_status!='hidden'""")) if has_table else set())
+               WHERE l.entry_type='word' AND l.human_status!='hidden'
+                 AND f.lemma_at_generation=l.lemma AND f.pos_at_generation=l.pos""")) if has_table else set())
     reasons = Counter()
     eligible = 0
     expected_forms = 0
