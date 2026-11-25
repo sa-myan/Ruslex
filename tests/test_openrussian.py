@@ -202,57 +202,82 @@ class OpenRussianTests(unittest.TestCase):
         self.assertEqual(report["data_mutation"], "none")
         self.assertEqual(original, (self.lexicon.read_bytes(), self.reference.read_bytes()))
 
-    def test_hidden_entries_are_separate_from_visible_priority(self):
-        with closing(sqlite3.connect(self.lexicon)) as lex:
-            lex.execute("UPDATE lexemes SET human_status='hidden' WHERE id IN (2, 6)")
-            lex.commit()
-        before = (self.lexicon.read_bytes(), self.reference.read_bytes())
-        result = diagnose(self.lexicon, self.reference, self.root / "work")
-        self.assertEqual(result["visibility"]["hidden"]["unresolved"], 2)
-        self.assertEqual(result["visibility"]["visible"]["unresolved"], 4)
-        self.assertEqual(result["visibility"]["hidden"]["blocked"]["not_found"], 1)
-        self.assertEqual(result["visibility"]["visible"]["blocked"].get("not_found", 0), 0)
-        self.assertFalse(any(item["lemma"] == "нетвсловаре"
-                             for item in result["visible_missing_examples"]))
-        self.assertTrue(any(item["lemma"] == "нетвсловаре"
-                            for item in result["hidden_missing_examples"]))
-        report = json.loads(Path(result["report"]).read_text(encoding="utf-8"))
-        self.assertEqual(len(report["all_cases"]), 6)
-        self.assertEqual(report["visibility"]["visible"]["unresolved"], 4)
-        self.assertEqual(before, (self.lexicon.read_bytes(), self.reference.read_bytes()))
-
-    def test_visibility_counts_include_stored_hidden_readings(self):
+    def test_hidden_is_logically_deleted_from_stress_processing(self):
         with closing(sqlite3.connect(self.lexicon)) as lex:
             lex.execute("UPDATE lexemes SET human_status='hidden' WHERE id IN (3, 6)")
             lex.commit()
+        before = (self.lexicon.read_bytes(), self.reference.read_bytes())
+        with connect_reference(self.reference) as ref, closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.row_factory = sqlite3.Row
+            audit = audit_entries(ref, lex)
+        self.assertNotIn("читать", [r["lemma"] for r in audit])
+        self.assertNotIn("нетвсловаре", [r["lemma"] for r in audit])
+        result = diagnose(self.lexicon, self.reference, self.root / "work")
+        self.assertEqual(result["active_dictionary"]["headwords"], 4)
+        self.assertEqual(result["unresolved_count"], 4)
+        self.assertNotIn("нетвсловаре", [r["lemma"] for r in
+                                         json.loads(Path(result["report"]).read_text())["all_cases"]])
+        self.assertEqual(before, (self.lexicon.read_bytes(), self.reference.read_bytes()))
+        initialize(self.lexicon, self.root / "backups")
+        self.assertEqual(apply_backfill(self.lexicon, self.reference,
+                                        self.root / "backups")["inserted"], 0)
+        with closing(sqlite3.connect(self.lexicon)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM lexeme_pronunciations").fetchone()[0], 0)
+
+    def test_hidden_existing_pronunciation_does_not_count_as_coverage(self):
         initialize(self.lexicon, self.root / "backups")
         apply_backfill(self.lexicon, self.reference, self.root / "backups")
+        with closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.execute("UPDATE lexemes SET human_status='hidden' WHERE id=3")
+            lex.commit()
         result = diagnose(self.lexicon, self.reference, self.root / "work")
-        self.assertEqual(result["visibility"]["hidden"]["stored_pronunciations"], 1)
-        self.assertEqual(result["visibility"]["hidden"]["unresolved"], 1)
-        self.assertEqual(result["visibility"]["visible"]["stored_pronunciations"], 0)
-        self.assertEqual(result["visibility"]["visible"]["unresolved"], 4)
+        self.assertEqual(result["active_dictionary"]["headwords"], 5)
+        self.assertEqual(result["active_dictionary"]["stored_pronunciations"], 0)
+        self.assertEqual(result["unresolved_count"], 5)
+        plan = backfill_plan(self.lexicon, self.reference)
+        self.assertEqual(plan["existing_pronunciations_skipped"], 0)
 
-    def test_diagnostic_explains_unknown_pos_with_meaning(self):
+    def test_cross_pos_consensus_recovers_function_word_without_reclassifying(self):
         with closing(sqlite3.connect(self.reference)) as ref:
-            ref.execute(
-                "INSERT INTO words VALUES(?,?,?,?,?,?)",
-                ("8", "разве", "ра'зве", "other", "", ""),
-            )
-            ref.execute(
-                "INSERT INTO translations VALUES(?,?,?,?)",
-                ("c", "en", "8", "really"),
-            )
+            ref.execute("INSERT INTO words VALUES(?,?,?,?,?,?)",
+                        ("8", "разве", "ра'зве", "other", "", ""))
+            ref.execute("INSERT INTO translations VALUES(?,?,?,?)",
+                        ("c", "en", "8", "really"))
             ref.commit()
         with closing(sqlite3.connect(self.lexicon)) as lex:
             lex.execute("INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(8,'разве','PRCL','word')")
             lex.commit()
-        result = diagnose(self.lexicon, self.reference, self.root / "work")
-        pair = next(item for item in result["pos_mismatch_pairs"]
-                    if item["ruslex_pos"] == "PRCL" and item["openrussian_type"] == "other")
-        self.assertEqual(pair["count"], 1)
-        self.assertEqual(pair["examples"][0]["reference_glosses"], ["really"])
-        self.assertEqual(result["blocked"]["unverified_reference_pos"], 1)
+        with connect_reference(self.reference) as ref, closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.row_factory = sqlite3.Row
+            case = next(r for r in audit_entries(ref, lex) if r["lemma"] == "разве")
+        self.assertEqual(case["status"], "candidate")
+        self.assertEqual(case["backfill_method"], "reference_consensus")
+        self.assertTrue(case["safe_backfill"])
+        initialize(self.lexicon, self.root / "backups")
+        result = apply_backfill(self.lexicon, self.reference, self.root / "backups")
+        self.assertEqual(result["inserted"], 2)
+        with closing(sqlite3.connect(self.lexicon)) as db:
+            self.assertEqual(db.execute(
+                "SELECT stressed FROM lexeme_pronunciations WHERE lexeme_id=8"
+            ).fetchone()[0], "ра\u0301зве")
+            self.assertEqual(db.execute("SELECT pos FROM lexemes WHERE id=8").fetchone()[0],
+                             "PRCL")
+
+    def test_consensus_abstains_on_cross_pos_stress_conflict(self):
+        with closing(sqlite3.connect(self.reference)) as ref:
+            ref.executemany("INSERT INTO words VALUES(?,?,?,?,?,?)", [
+                ("8", "около", "о'коло", "adverb", "", ""),
+                ("9", "около", "око'ло", "other", "", ""),
+            ])
+            ref.commit()
+        with closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.execute("INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(8,'около','PREP','word')")
+            lex.commit()
+        with connect_reference(self.reference) as ref, closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.row_factory = sqlite3.Row
+            case = next(r for r in audit_entries(ref, lex) if r["lemma"] == "около")
+        self.assertEqual(case["status"], "ambiguous")
+        self.assertFalse(case["safe_backfill"])
 
     def test_cli_lookup(self):
         with patch.object(cli, "REFERENCE_DB", self.reference):
