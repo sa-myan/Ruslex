@@ -47,14 +47,14 @@ class OpenRussianTests(unittest.TestCase):
             db.commit()
         with closing(sqlite3.connect(self.lexicon)) as db:
             db.executescript("""
-                CREATE TABLE lexemes(id INTEGER PRIMARY KEY,lemma TEXT,pos TEXT,entry_type TEXT);
-                INSERT INTO lexemes VALUES(1,'замок','NOUN','word');
-                INSERT INTO lexemes VALUES(2,'елка','NOUN','word');
-                INSERT INTO lexemes VALUES(3,'читать','VERB','word');
-                INSERT INTO lexemes VALUES(4,'все','NPRO','word');
-                INSERT INTO lexemes VALUES(5,'молоко','NOUN','word');
-                INSERT INTO lexemes VALUES(6,'нетвсловаре','NOUN','word');
-                INSERT INTO lexemes VALUES(7,'выражение','OTHER','expression');
+                CREATE TABLE lexemes(id INTEGER PRIMARY KEY,lemma TEXT,pos TEXT,entry_type TEXT, human_status TEXT NOT NULL DEFAULT 'unreviewed');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(1,'замок','NOUN','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(2,'елка','NOUN','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(3,'читать','VERB','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(4,'все','NPRO','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(5,'молоко','NOUN','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(6,'нетвсловаре','NOUN','word');
+                INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(7,'выражение','OTHER','expression');
             """)
 
     def test_stress_and_yo_are_preserved(self):
@@ -139,7 +139,7 @@ class OpenRussianTests(unittest.TestCase):
             ref.commit()
         with closing(sqlite3.connect(self.lexicon)) as lex:
             lex.execute(
-                "INSERT INTO lexemes VALUES(8,'Дом','NOUN','word')"
+                "INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(8,'Дом','NOUN','word')"
             )
             lex.commit()
         with connect_reference(self.reference) as ref, closing(sqlite3.connect(self.lexicon)) as lex:
@@ -202,6 +202,37 @@ class OpenRussianTests(unittest.TestCase):
         self.assertEqual(report["data_mutation"], "none")
         self.assertEqual(original, (self.lexicon.read_bytes(), self.reference.read_bytes()))
 
+    def test_hidden_entries_are_separate_from_visible_priority(self):
+        with closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.execute("UPDATE lexemes SET human_status='hidden' WHERE id IN (2, 6)")
+            lex.commit()
+        before = (self.lexicon.read_bytes(), self.reference.read_bytes())
+        result = diagnose(self.lexicon, self.reference, self.root / "work")
+        self.assertEqual(result["visibility"]["hidden"]["unresolved"], 2)
+        self.assertEqual(result["visibility"]["visible"]["unresolved"], 4)
+        self.assertEqual(result["visibility"]["hidden"]["blocked"]["not_found"], 1)
+        self.assertEqual(result["visibility"]["visible"]["blocked"].get("not_found", 0), 0)
+        self.assertFalse(any(item["lemma"] == "нетвсловаре"
+                             for item in result["visible_missing_examples"]))
+        self.assertTrue(any(item["lemma"] == "нетвсловаре"
+                            for item in result["hidden_missing_examples"]))
+        report = json.loads(Path(result["report"]).read_text(encoding="utf-8"))
+        self.assertEqual(len(report["all_cases"]), 6)
+        self.assertEqual(report["visibility"]["visible"]["unresolved"], 4)
+        self.assertEqual(before, (self.lexicon.read_bytes(), self.reference.read_bytes()))
+
+    def test_visibility_counts_include_stored_hidden_readings(self):
+        with closing(sqlite3.connect(self.lexicon)) as lex:
+            lex.execute("UPDATE lexemes SET human_status='hidden' WHERE id IN (3, 6)")
+            lex.commit()
+        initialize(self.lexicon, self.root / "backups")
+        apply_backfill(self.lexicon, self.reference, self.root / "backups")
+        result = diagnose(self.lexicon, self.reference, self.root / "work")
+        self.assertEqual(result["visibility"]["hidden"]["stored_pronunciations"], 1)
+        self.assertEqual(result["visibility"]["hidden"]["unresolved"], 1)
+        self.assertEqual(result["visibility"]["visible"]["stored_pronunciations"], 0)
+        self.assertEqual(result["visibility"]["visible"]["unresolved"], 4)
+
     def test_diagnostic_explains_unknown_pos_with_meaning(self):
         with closing(sqlite3.connect(self.reference)) as ref:
             ref.execute(
@@ -214,7 +245,7 @@ class OpenRussianTests(unittest.TestCase):
             )
             ref.commit()
         with closing(sqlite3.connect(self.lexicon)) as lex:
-            lex.execute("INSERT INTO lexemes VALUES(8,'разве','PRCL','word')")
+            lex.execute("INSERT INTO lexemes(id,lemma,pos,entry_type) VALUES(8,'разве','PRCL','word')")
             lex.commit()
         result = diagnose(self.lexicon, self.reference, self.root / "work")
         pair = next(item for item in result["pos_mismatch_pairs"]
