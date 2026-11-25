@@ -57,10 +57,22 @@ def match_capitalization(stressed: str, lemma: str) -> str:
     for char in stressed:
         if char == ACUTE:
             result.append(char)
-        else:
-            result.append(char.upper() if target[index].isupper() else char.lower()
-                          if char.isalpha() else char)
-            index += 1
+            continue
+        # An orphan apostrophe is retained for source review; it is not a
+        # character of the headword and must not advance the letter index.
+        # normalize_accented() already marks it as a source warning.
+        if char in ("'", "\u2019"):
+            result.append(char)
+            continue
+        if index >= len(target):
+            raise ValueError("Reference has more headword characters than Ruslex")
+        result.append(
+            char.upper() if target[index].isupper()
+            else char.lower() if char.isalpha() else char
+        )
+        index += 1
+    if index != len(target):
+        raise ValueError("Reference has fewer headword characters than Ruslex")
     return "".join(result)
 
 
