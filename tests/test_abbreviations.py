@@ -145,6 +145,14 @@ class AbbreviationTests(unittest.TestCase):
         self.assertNotIn("е", surfaces)
         options = parse_forms("т. д.", FakeMorph())
         self.assertEqual(options[0]["entry_type"], "abbreviation")
+        technical = tokenize("На реакторе ВВЭР-1200 применена система защиты.")
+        names = [surface for surface, _ in technical]
+        self.assertIn("ввэр-1200", names)
+        self.assertNotIn("ввэр", names)
+        self.assertEqual(
+            parse_forms("ввэр-1200", FakeMorph())[0]["entry_type"],
+            "abbreviation",
+        )
 
     def test_rehearsal_never_writes_original(self):
         initial = self.live.read_bytes()
