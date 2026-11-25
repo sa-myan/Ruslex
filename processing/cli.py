@@ -17,6 +17,7 @@ from .enrichment_merge import apply_enrichment
 from .forms import resolve, review_batch, apply_decisions
 from .openrussian import connect_reference, lookup, result as reference_result, verify_schema, reference_fingerprint
 from .reference_audit import audit_entries, write_report, suggested_report_path
+from .stress_diagnostics import diagnose as diagnose_stress
 from .pronunciations import initialize as stress_initialize, backfill_plan as stress_plan, apply_backfill as stress_apply, rehearse as stress_rehearse
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan, promote, workspace_paths
@@ -55,6 +56,7 @@ def main(argv=None):
     stress = commands.add_parser("stress", help="Pronunciation migration and read-only plan")
     stress_actions = stress.add_subparsers(dest="stress_action", required=True)
     stress_actions.add_parser("plan", help="Show safe candidates; no writes")
+    stress_actions.add_parser("diagnose", help="Explain remaining headwords; report only")
     stress_actions.add_parser("rehearse", help="Test migration/backfill against an isolated snapshot")
     for action in ("init", "backfill"):
         step = stress_actions.add_parser(action)
@@ -129,6 +131,8 @@ def main(argv=None):
         if args.command == "stress":
             if args.stress_action == "plan":
                 result = stress_plan(LIVE_DB, REFERENCE_DB)
+            elif args.stress_action == "diagnose":
+                result = diagnose_stress(LIVE_DB, REFERENCE_DB, WORK_ROOT)
             elif args.stress_action == "rehearse":
                 result = stress_rehearse(LIVE_DB, REFERENCE_DB, WORK_ROOT)
             elif args.stress_action == "init":
