@@ -20,7 +20,7 @@ from .storage import atomic_json
 FIELDS = (
     "lexeme_id", "lemma", "pos", "status", "proposed_spelling",
     "stress_candidates", "reference_ids", "reference_types", "reasons",
-    "yo_check", "safe_backfill",
+    "yo_check", "safe_backfill", "backfill_blocker",
 )
 
 
@@ -85,6 +85,12 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
         )
         safe_backfill = (status == "candidate" and yo_check != "different_spelling"
                          and compatible_pos and bool(stress_forms))
+        backfill_blocker = (
+            "" if safe_backfill else
+            "review_yo" if status == "candidate" and yo_check == "different_spelling" else
+            "unverified_reference_pos" if status == "candidate" and not compatible_pos else
+            "no_usable_stress" if status == "candidate" and not stress_forms else status
+        )
 
         rows.append({
             "lexeme_id": lexeme["id"], "lemma": lexeme["lemma"],
@@ -96,6 +102,7 @@ def audit_entries(reference: sqlite3.Connection, lexicon: sqlite3.Connection) ->
             "reasons": "; ".join(reasons),
             "yo_check": yo_check,
             "safe_backfill": safe_backfill,
+            "backfill_blocker": backfill_blocker,
         })
     return rows
 
