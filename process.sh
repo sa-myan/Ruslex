@@ -86,6 +86,16 @@ case "$command" in
       *) echo "Use ./process.sh stress {plan|diagnose|rehearse|init|backfill|ai-run|ai-plan|ai-apply}" >&2; exit 2 ;;
     esac
     ;;
+  forms)
+    case "${1:-}" in
+      init|backfill) compose run --rm --no-deps promoter python -m processing.cli forms "$@" ;;
+      plan|rehearse) compose run --rm --no-deps rehearsal python -m processing.cli forms "$@" ;;
+      *) echo "Use ./process.sh forms {plan|rehearse|init|backfill}" >&2; exit 2 ;;
+    esac
+    ;;
+  book-promote)
+    compose run --rm --no-deps promoter python -m processing.cli book-promote "$@"
+    ;;
   promote)
     compose run --rm --no-deps promoter python -m processing.cli promote "$@"
     ;;
