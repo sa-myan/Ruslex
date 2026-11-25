@@ -27,6 +27,11 @@ printf '\n== Independent on-demand processing image ==\n'
 export PROCESSING_IMAGE=ruslex-book-check-processing:local
 ./process.sh build
 
+if [ -r "$data_root/reference/openrussian.db" ]; then
+  printf '\n== AI stress exception prompt dry run (NO model call) ==\n'
+  ./process.sh stress ai-run dryrun-check --model provider/placeholder --dry-run
+fi
+
 printf '\n== Snapshot-based forms migration and backfill rehearsal ==\n'
 output=$(./process.sh forms rehearse)
 printf '%s\n' "$output"
