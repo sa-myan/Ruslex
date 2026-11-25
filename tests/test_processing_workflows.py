@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
+import io
 import sqlite3
 import tempfile
 import zipfile
-from contextlib import closing
+from contextlib import closing, redirect_stderr
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -85,10 +86,15 @@ class ProcessingTest(unittest.TestCase):
                 "examples": [{"russian": "Мама дома.", "english": "Mother is home."}],
             }],
         }]}
-        with patch("processing.forms.opencode", return_value=decisions) as forms_ai:
-            with patch("processing.workflow.opencode", return_value=enrichment) as lexeme_ai:
-                result = advance_book(self.live, workspace, book="Auto Book",
-                                      model="provider/test", expressions=False)
+        output = io.StringIO()
+        with redirect_stderr(output):
+            with patch("processing.forms.opencode", return_value=decisions) as forms_ai:
+                with patch("processing.workflow.opencode", return_value=enrichment) as lexeme_ai:
+                    result = advance_book(self.live, workspace, book="Auto Book",
+                                          model="provider/test", expressions=False)
+        self.assertIn("[AI forms] start:", output.getvalue())
+        self.assertIn("[AI lexemes] start:", output.getvalue())
+        self.assertIn("[AI book/complete]", output.getvalue())
         self.assertEqual(result["stage"], "ready_for_promotion")
         self.assertEqual(forms_ai.call_count, 1)
         self.assertEqual(lexeme_ai.call_count, 1)
