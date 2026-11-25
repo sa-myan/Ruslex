@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+import io
+from contextlib import redirect_stderr
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -157,6 +159,29 @@ class StressAITests(unittest.TestCase):
             analyze(self.live, self.reference, self.work, name="settings",
                     model="provider/model-a", batch_size=4, dry_run=True)
         self.assertEqual(batch_files[0].read_bytes(), original)
+
+    def test_stress_progress_tracks_new_batch_and_resumption(self):
+        first = self.vote(1, "писа́ть", "10", [4])
+        logs = io.StringIO()
+        with patch("processing.stress_ai.opencode", return_value=first):
+            with redirect_stderr(logs):
+                part = analyze(self.live, self.reference, self.work,
+                               name="progress", model="provider/model-a",
+                               batch_size=1, max_batches=1)
+        self.assertEqual(part["completed"], 1)
+        self.assertIn("start: 0/2", logs.getvalue())
+        self.assertIn("saved: 1/2", logs.getvalue())
+        self.assertIn("paused: 1/2", logs.getvalue())
+        logs = io.StringIO()
+        second = self.vote(3, "лека́рство", "50", [6])
+        with patch("processing.stress_ai.opencode", return_value=second):
+            with redirect_stderr(logs):
+                resumed = analyze(self.live, self.reference, self.work,
+                                  name="progress", model="provider/model-a",
+                                  batch_size=1, max_batches=1)
+        self.assertEqual(resumed["completed"], 2)
+        self.assertIn("resuming 1 completed", logs.getvalue())
+        self.assertIn("complete: 2/2", logs.getvalue())
 
     def test_explicit_approval_of_validated_single_model_reference_choice(self):
         first = self.vote(1, "писа́ть", "10", [4])
