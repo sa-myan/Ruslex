@@ -26,6 +26,12 @@ KNOWN_ABBREVIATIONS = frozenset("""
 # These lexicalized abbreviations decline regularly. Initialisms such as
 # МГУ or США must NOT be given invented inflection tables.
 INFLECTING_ABBREVIATIONS = frozenset({"вуз", "загс"})
+# Common written abbreviations, not individual phonetic/alphabet exercises.
+# Spellings are normalized with spaces after dots when possible.
+DOTTED_ABBREVIATIONS = frozenset({
+    "т. д.", "т. е.", "т. к.", "г.", "ул.", "стр.", "рис.", "им.",
+})
+
 
 DEFINITION_CUE = re.compile(
     r"\b(?:abbreviation|abbreviated|acronym|initialism|"
@@ -62,7 +68,7 @@ def _candidates(db: sqlite3.Connection) -> list[dict]:
     ):
         name = row["lemma"].casefold().replace("ё", "е")
         meanings = str(row["meanings"] or "")
-        known = name in KNOWN_ABBREVIATIONS
+        known = name in KNOWN_ABBREVIATIONS or name in DOTTED_ABBREVIATIONS
         definitional = bool(DEFINITION_CUE.search(meanings))
         if known or definitional:
             cases.append({
