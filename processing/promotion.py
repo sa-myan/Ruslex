@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .storage import atomic_json, read_database, snapshot, write_database
 from .pronunciations import backfill_new_lexemes
+from .paradigms import for_new_lexemes
 
 # Parent rows before children; SQLite FK checks remain ON during insertion.
 TABLE_ORDER = (
@@ -183,10 +184,11 @@ def promote(live: Path, workspace: Path, backups: Path, *, confirmed=False) -> d
                     placeholders = ", ".join("?" for _ in columns)
                     sql = f'INSERT INTO "{name}" ({quoted}) VALUES ({placeholders})'
                     production.executemany(sql, rows.values())
+                new_ids = {identity[0] for identity in changes["lexemes"][1]}
                 automatic_stress = backfill_new_lexemes(
-                    production, Path("/reference/openrussian.db"),
-                    {identity[0] for identity in changes["lexemes"][1]},
+                    production, Path("/reference/openrussian.db"), new_ids,
                 )
+                automatic_forms = for_new_lexemes(production, new_ids)
                 _integrity(production)
                 # write_database commits only after successful validation.
     except Exception:
@@ -194,6 +196,7 @@ def promote(live: Path, workspace: Path, backups: Path, *, confirmed=False) -> d
         raise
     result = {**preview, "promoted": True,
               "automatically_added_headword_pronunciations": automatic_stress,
+              "automatically_generated_word_forms": automatic_forms,
               "pre_promotion_backup": str(backup_path),
               "completed_utc": datetime.now(timezone.utc).isoformat()}
     atomic_json(workspace / "promotion.json", result)
