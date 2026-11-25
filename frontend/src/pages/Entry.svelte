@@ -8,6 +8,7 @@
 
   import EntryIdentityForm from '../components/entry/EntryIdentityForm.svelte';
   import PronunciationEditor from '../components/entry/PronunciationEditor.svelte';
+  import WordForms from '../components/entry/WordForms.svelte';
   import ExpressionComponents from '../components/entry/ExpressionComponents.svelte';
   import ExternalLinks from '../components/entry/ExternalLinks.svelte';
   import SenseCard from '../components/SenseCard.svelte';
@@ -232,6 +233,10 @@
         onSaveStart={clearNotice}
       />
     {/each}
+  {/if}
+
+  {#if entry.entry_type === 'word'}
+    <WordForms forms={entry.word_forms ?? []} />
   {/if}
 
   <RelationList
