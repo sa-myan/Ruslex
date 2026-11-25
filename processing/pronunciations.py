@@ -115,6 +115,8 @@ def backfill_plan(live: Path, reference: Path) -> dict:
         "schema_installed": has_storage,
         "total_headwords": len(rows),
         "statuses": dict(Counter(r["status"] for r in rows)),
+        "backfill_blockers": dict(Counter(r["backfill_blocker"] for r in rows if r["lexeme_id"] not in present and not r["safe_backfill"])),
+        "candidate_blocked_reference_types": dict(Counter(r["reference_types"] for r in rows if r["lexeme_id"] not in present and r["status"] == "candidate" and not r["safe_backfill"]).most_common(12)),
         "yo_checks": dict(Counter(r["yo_check"] for r in rows)),
         "safe_new_pronunciations": len(candidates),
         "existing_pronunciations_skipped": len(present),
