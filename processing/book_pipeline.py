@@ -90,17 +90,21 @@ def advance(live: Path, workspace: Path, *, book: str, model: str,
     if (workspace / "promotion.json").exists():
         raise RuntimeError("Workspace was already promoted; create a new workspace")
 
+    forms_outcome = None
     if summary["pending_forms"]:
         with (read_database if dry_run else write_database)(workspace / "candidate.db") as db:
-            outcome = resolve(db, workspace=workspace, book=book, model=model,
-                              executable=executable, batch_size=24,
-                              max_batches=max_batches, timeout=timeout,
-                              dry_run=dry_run)
-        refreshed = book_status(workspace, book)
-        return {"stage": "resolve_forms", "result": outcome,
-                "status": refreshed, "next": "Run book-run again" if
-                refreshed["pending_forms"] else "Continue enrichment with book-run",
-                "live_mutation": "none"}
+            forms_outcome = resolve(db, workspace=workspace, book=book, model=model,
+                                    executable=executable, batch_size=24,
+                                    max_batches=max_batches, timeout=timeout,
+                                    dry_run=dry_run)
+        summary = book_status(workspace, book)
+        if dry_run or summary["pending_forms"]:
+            return {"stage": "resolve_forms", "result": forms_outcome,
+                    "status": summary, "next": "Run book-run again",
+                    "live_mutation": "none"}
+        # All mandatory OCR decisions are settled. Continue in this invocation
+        # instead of forcing a second manual checkpoint.
+
 
     if dry_run:
         return {"stage": "enrichment", "status": summary,
@@ -144,7 +148,8 @@ def advance(live: Path, workspace: Path, *, book: str, model: str,
     else:
         applied = {"already_applied": True}
 
-    return {"stage": "ready_for_promotion", "enrichment": applied,
+    return {"stage": "ready_for_promotion", "form_review": forms_outcome,
+            "enrichment": applied,
             "status": book_status(workspace, book),
             "plan": promotion_plan(live, workspace),
             "next": "Review plan, then run book-promote --confirm",
