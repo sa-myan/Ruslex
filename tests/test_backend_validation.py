@@ -51,6 +51,18 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(identity({"lemma": "сделать"}, current)["aspect"], "imperfective")
         self.assertEqual(identity({"pos": "NOUN"}, current)["aspect"], None)
 
+    def test_abbreviations_are_entry_type_not_pos(self):
+        for lemma in ("МГУ", "вуз", "Т. Д.", "г.", "ВВЭР-1200"):
+            with self.subTest(lemma=lemma):
+                result = identity({"lemma": lemma, "pos": "NOUN",
+                                   "entry_type": "abbreviation"})
+                self.assertEqual(result["entry_type"], "abbreviation")
+        with self.assertRaises(BadRequest):
+            identity({"lemma": "т. д.", "pos": "NOUN", "entry_type": "word"})
+        with self.assertRaises(BadRequest):
+            identity({"lemma": "здравствуйте", "pos": "NOUN",
+                      "entry_type": "abbreviation", "aspect": "perfective"})
+
     def test_invalid_lexeme_values_never_raise_type_errors(self):
         invalid_payloads = [
             {"lemma": "тест", "pos": "NOUN", "entry_type": []},
