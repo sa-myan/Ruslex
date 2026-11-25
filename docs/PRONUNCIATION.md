@@ -22,7 +22,20 @@ retain a misleading OpenRussian provenance reference.
 
 **Do not deploy this experimental branch to production as-is.**
 First test the branch against a disposable snapshot, and run the offline
-regression suite, Django checks and frontend build.
+regression suite, Django checks and frontend build. From the checked-out
+feature branch, all pre-deployment checks are available in one command:
+
+~~~sh
+sh scripts/verify_pronunciation.sh
+~~~
+
+The script builds images but does **not** recreate the web container or write
+to the live lexicon. It runs offline unit tests, the Svelte type/build check,
+Django's existing copy-based smoke tests, and a complete stress init/backfill
+rehearsal using an independently snapshotted SQLite database under
+`/srv/data/ruslex/processing/stress_rehearsals`. The rehearsal fails on
+integrity errors, changed legacy record counts or non-idempotent backfill.
+
 
 On the VPS, after the PR has been reviewed and merged, and after a normal
 tested deployment, the intended one-time sequence is:
@@ -34,6 +47,7 @@ cd /srv/apps/ruslex
 ./process.sh reference info
 ./process.sh reference audit
 ./process.sh stress plan
+./process.sh stress rehearse
 ./process.sh stress init --confirm
 ./process.sh stress plan
 ./process.sh stress backfill --confirm
