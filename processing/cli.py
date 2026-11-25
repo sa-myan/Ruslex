@@ -13,6 +13,7 @@ from contextlib import closing
 from pathlib import Path
 
 from .audit import connect_read_only, make_audit
+from .book_status import status as book_status
 from .enrichment_merge import apply_enrichment
 from .forms import resolve, review_batch, apply_decisions
 from .openrussian import connect_reference, lookup, result as reference_result, verify_schema, reference_fingerprint
@@ -80,6 +81,9 @@ def main(argv=None):
     audit_cmd.add_argument("--sample-size", type=int, default=150)
     create = commands.add_parser("workspace", help="Create isolated baseline and candidate from live")
     add_workspace(create)
+    book_progress = commands.add_parser("book-status", help="Summarize an OCR book workspace and what remains")
+    add_workspace(book_progress)
+    book_progress.add_argument("--book", required=True)
     inspect_command = commands.add_parser("inspect-ocr", help="Preview Mistral OCR export without importing")
     inspect_command.add_argument("input", type=Path, help="Source file or directory inside /ocr")
 
@@ -223,7 +227,9 @@ def main(argv=None):
                 result = create_workspace(LIVE_DB, workspace)
             else:
                 _, candidate = workspace_paths(workspace)
-                if args.command == "import-ocr":
+                if args.command == "book-status":
+                    result = book_status(workspace, args.book)
+                elif args.command == "import-ocr":
                     source = args.input.resolve()
                     if not source.is_relative_to(OCR_ROOT):
                         raise ValueError("OCR input must be under /ocr")
