@@ -67,7 +67,7 @@ def _check_entry_type_change(entry: models.Lexeme, values: dict) -> None:
         return
 
     components = models.ExpressionComponent.objects.using(LEXICON)
-    if values["entry_type"] == "word":
+    if values["entry_type"] != "expression":
         if components.filter(expression_id=entry.id).exists():
             fail("Remove constituents before converting expression into a word")
     elif components.filter(word_id=entry.id).exists():
