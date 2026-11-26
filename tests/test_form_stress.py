@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from processing.form_stress import initialize, plan, apply, rehearse
-from processing.paradigms import initialize as initialize_forms
+from processing.paradigms import initialize as initialize_forms, fold
 
 SCHEMA = Path(__file__).parent / "fixtures" / "empty_lexicon_schema.sql"
 
@@ -42,7 +42,9 @@ class FormStressTests(unittest.TestCase):
             db.executemany(
                 """INSERT INTO lexeme_forms
                    (lexeme_id,lemma_at_generation,pos_at_generation,form,form_key,grammemes,created_at)
-                   VALUES(?,?,?,?,?,?,datetime('now'))""", rows,
+                   VALUES(?,?,?,?,?,?,datetime('now'))""",
+                [(a, b, pos, form, fold(form), tags)
+                 for a, b, pos, form, _key, tags in rows],
             )
         with sqlite3.connect(self.ref) as db:
             db.executescript("""
