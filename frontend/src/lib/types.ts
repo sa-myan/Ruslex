@@ -152,6 +152,7 @@ export interface WordForm {
   form: string;
   grammemes: string;
   source: string;
+  stressed?: string | null;
 }
 
 export interface Entry extends Summary {
