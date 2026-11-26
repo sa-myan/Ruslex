@@ -9,6 +9,7 @@
   let { forms, pos }: Props = $props();
   let showOther = $state(false);
   let showAnalyses = $state(false);
+  let showOther = $state(false);
   const organized = $derived(organizeWordForms(forms, pos));
 </script>
 {#if organized.unique.length}
@@ -62,17 +63,27 @@
     {/each}
     {#if organized.other.length}
       <div class="mt-5">
-        <h4 class="font-semibold text-sm mb-2">
-          {organized.tables.length ? 'Other forms' : 'Forms and analyses'}
-        </h4>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {#each organized.other as item (item.form + '/' + item.grammemes)}
-            <div class="border border-base-300 rounded-lg p-2">
-              <div class="russian font-medium">{item.form}</div>
-              <div class="text-xs opacity-60 mt-1 break-words">{item.grammemes.replaceAll(',', ' · ')}</div>
-            </div>
-          {/each}
-        </div>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline"
+          aria-expanded={showOther}
+          onclick={() => { showOther = !showOther; }}
+        >
+          {showOther ? 'Hide' : 'Show'} {organized.other.length} other forms
+        </button>
+        {#if showOther}
+          <p class="text-xs opacity-65 mt-2">
+            These forms have analyses not included in the common tables above.
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
+            {#each organized.other as item (item.form + '/' + item.grammemes)}
+              <div class="border border-base-300 rounded-lg p-2">
+                <div class="russian font-medium">{item.form}</div>
+                <div class="text-xs opacity-60 mt-1 break-words">{item.grammemes.replaceAll(',', ' · ')}</div>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
     <button
