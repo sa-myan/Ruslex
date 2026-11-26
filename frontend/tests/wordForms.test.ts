@@ -53,7 +53,7 @@ describe('complete Russian morphology tables', () => {
       f('нов','ADJS,masc,sing'),
     ], 'ADJF');
     expect(o.tables.map(t=>t.title)).toEqual([
-      'Full adjective forms', 'Short adjective forms',
+      'Positive degree · full forms', 'Positive degree · short forms',
     ]);
     expect(o.tables[0].rows[0].cells).toEqual([
       ['новый'], ['новая'], ['новое'], ['новые'],
