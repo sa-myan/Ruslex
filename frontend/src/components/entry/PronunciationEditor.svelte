@@ -7,8 +7,10 @@
     entry: Entry;
     refresh: () => Promise<boolean>;
     onSaved?: () => void;
+    suggestedReading?: string;
+    suggestionToken?: number;
   }
-  let { entry, refresh, onSaved }: Props = $props();
+  let { entry, refresh, onSaved, suggestedReading = '', suggestionToken = 0 }: Props = $props();
 
   let editing = $state<number | null | 'new'>(null);
   let spelling = $state('');
@@ -25,14 +27,25 @@
       .filter(({ letter }) => vowels.includes(letter))
   );
 
-  function begin(reading?: Pronunciation): void {
+  function begin(reading?: Pronunciation, proposed?: string): void {
     editing = reading?.id ?? 'new';
-    spelling = reading?.stressed ?? entry.lemma;
+    spelling = reading?.stressed ?? proposed ?? entry.lemma;
     primary = reading?.is_primary ?? !entry.pronunciations.length;
     selectedSenses = [...(reading?.sense_ids ?? [])];
     error = '';
     success = '';
   }
+
+  // A source suggestion is a draft only. This opens the normal editor;
+  // it never sends a mutation until the user explicitly saves.
+  $effect(() => {
+    const token = suggestionToken;
+    const proposal = suggestedReading;
+    if (token > 0 && proposal) {
+      const existing = entry.pronunciations.find(item => item.stressed === proposal);
+      begin(existing, proposal);
+    }
+  });
 
   function accent(position: number): void {
     const letters = Array.from(spelling.replace(/\u0301/g, ''));
