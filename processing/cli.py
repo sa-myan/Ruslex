@@ -31,7 +31,9 @@ from .reference_audit import audit_entries, write_report, suggested_report_path
 from .stress_diagnostics import diagnose as diagnose_stress
 from .stress_ai import analyze as stress_ai_analyze, plan as stress_ai_plan, apply as stress_ai_apply, parse_approval_ids, preview_approvals as stress_ai_approval_preview
 from .pronunciations import initialize as stress_initialize, backfill_plan as stress_plan, apply_backfill as stress_apply, rehearse as stress_rehearse
-from .pronunciation_review import initialize as review_init, plan as review_plan
+from .pronunciation_review import (initialize as review_init, plan as review_plan,
+                                    candidates_plan as review_candidates_plan,
+                                    refresh_candidates as review_candidates_refresh)
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan, promote, workspace_paths
 from .storage import atomic_json, inventory, prepare, read_database, write_database
@@ -69,6 +71,10 @@ def main(argv=None):
     review = commands.add_parser("pronunciation-review", help="Independent manual stress review queue")
     review_actions = review.add_subparsers(dest="review_action", required=True)
     review_actions.add_parser("plan", help="Read-only pronunciation queue counts")
+    review_actions.add_parser("candidates-plan", help="Read-only OpenRussian suggestions preview")
+    review_actions.add_parser("candidates-refresh", help="Refresh cached OpenRussian suggestions").add_argument(
+        "--confirm", action="store_true", required=True,
+    )
     review_actions.add_parser("init", help="Install deferral schema").add_argument(
         "--confirm", action="store_true", required=True,
     )
@@ -209,7 +215,16 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == "pronunciation-review":
-            result = review_plan(LIVE_DB) if args.review_action == "plan" else review_init(LIVE_DB, BACKUP_ROOT)
+            if args.review_action == "plan":
+                result = review_plan(LIVE_DB)
+            elif args.review_action == "init":
+                result = review_init(LIVE_DB, BACKUP_ROOT)
+            elif args.review_action == "candidates-plan":
+                result = review_candidates_plan(LIVE_DB, REFERENCE_DB)
+            elif args.review_action == "candidates-refresh":
+                result = review_candidates_refresh(LIVE_DB, REFERENCE_DB, BACKUP_ROOT)
+            else:
+                parser.error("Unknown pronunciation review operation")
         elif args.command == "abbreviations":
             if args.abbr_action == "plan":
                 result = abbreviation_plan(LIVE_DB)
