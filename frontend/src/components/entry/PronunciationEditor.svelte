@@ -6,8 +6,9 @@
   interface Props {
     entry: Entry;
     refresh: () => Promise<boolean>;
+    onSaved?: () => void;
   }
-  let { entry, refresh }: Props = $props();
+  let { entry, refresh, onSaved }: Props = $props();
 
   let editing = $state<number | null | 'new'>(null);
   let spelling = $state('');
@@ -78,6 +79,7 @@
       if (await refresh()) {
         editing = null;
         success = 'Pronunciation saved';
+        onSaved?.();
       }
     } catch (err) {
       error = errorMessage(err);
