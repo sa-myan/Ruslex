@@ -49,18 +49,19 @@ def next_entry(queue: str = "pending", after: int = 0) -> dict:
     where = _eligible_sql(queue)
     total = legacy_rows("SELECT COUNT(*) AS n " + where)[0]["n"]
     rows = legacy_rows(
-        "SELECT l.id, q.note " + where + " AND l.id > %s ORDER BY l.id LIMIT 1",
+        "SELECT l.id, q.note, q.lexeme_id AS deferred_id " + where + " AND l.id > %s ORDER BY l.id LIMIT 1",
         [after],
     )
     if not rows:
-        rows = legacy_rows("SELECT l.id,q.note " + where + " ORDER BY l.id LIMIT 1")
+        rows = legacy_rows("SELECT l.id,q.note,q.lexeme_id AS deferred_id " + where + " ORDER BY l.id LIMIT 1")
     if not rows:
-        return {"entry": None, "total": total, "note": ""}
+        return {"entry": None, "total": total, "note": "", "deferred": False}
     from .query_detail import detail
     return {
         "entry": detail(rows[0]["id"]),
         "total": total,
         "note": rows[0]["note"] or "",
+        "deferred": rows[0]["deferred_id"] is not None,
     }
 
 
