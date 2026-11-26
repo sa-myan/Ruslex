@@ -70,7 +70,7 @@ class FormStressTests(unittest.TestCase):
         before = self.live.read_bytes()
         p = plan(self.live, self.ref)
         self.assertFalse(p["schema_ready"])
-        self.assertEqual(p["safe_candidates"], 3)
+        self.assertEqual(p["safe_candidates"], 3, p)
         self.assertEqual(before, self.live.read_bytes())
         initialize(self.live, self.backups)
         result = apply(self.live, self.ref, self.backups)
@@ -86,7 +86,7 @@ class FormStressTests(unittest.TestCase):
 
     def test_pinned_homograph_reference_can_be_used(self):
         # Before the stress migration is installed, ambiguity forbids a guess.
-        self.assertEqual(plan(self.live, self.ref)["safe_candidates"], 3)
+        self.assertEqual(plan(self.live, self.ref)["safe_candidates"], 3, plan(self.live, self.ref))
         with sqlite3.connect(self.live) as db:
             db.executescript("""
                 CREATE TABLE lexeme_pronunciations(
