@@ -26,7 +26,7 @@ class PronunciationReviewTests(unittest.TestCase):
                    VALUES (?,?,?,?)""",
                 [
                     ("писать", "VERB", "word", "kept"),
-                    ("вуз", "NOUN", "abbreviation", "kept"),
+                    ("вуз", "NOUN", "word", "kept"),
                     ("тест", "NOUN", "word", "hidden"),
                 ],
             )
