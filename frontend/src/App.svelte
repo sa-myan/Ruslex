@@ -12,6 +12,7 @@
   import References from './pages/References.svelte';
   import Stats from './pages/Stats.svelte';
   import Review from './pages/Review.svelte';
+  import PronunciationReview from './pages/PronunciationReview.svelte';
   import NewEntry from './pages/NewEntry.svelte';
   import Login from './pages/Login.svelte';
 
@@ -177,6 +178,8 @@
         <Stats />
       {:else if path === '/review' && $reviewMode}
         <Review />
+      {:else if path === '/pronunciation-review' && $editMode}
+        <PronunciationReview />
       {:else if path === '/new' && $editMode}
         <NewEntry />
       {:else if path === '/login'}
