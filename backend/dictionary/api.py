@@ -16,7 +16,7 @@ from django.views.decorators.http import require_http_methods
 
 from accounts.api import has_edit, has_review
 
-from . import queries, services, pronunciation
+from . import queries, services, pronunciation, pronunciation_review
 from .catalog import ANIMACIES, ASPECTS, PARTS_OF_SPEECH, RELATIONS
 
 
@@ -340,3 +340,28 @@ def sense_tags(request, word_id: int, sense_id: int, tag_id: int | None = None):
     if tag_id is None:
         raise services.BadRequest("Tag ID required")
     return respond(services.detach_tag(word_id, sense_id, tag_id))
+
+
+@api_errors
+@require_http_methods(["GET"])
+def pronunciation_review_next(request):
+    denied = require(request, "edit")
+    if denied is not None:
+        return denied
+    try:
+        after = int(request.GET.get("after", "0"))
+    except (ValueError, TypeError) as exc:
+        raise services.BadRequest("Invalid pronunciation review cursor") from exc
+    return respond(pronunciation_review.next_entry(request.GET.get("queue", "pending"), after))
+
+
+@api_errors
+@require_http_methods(["PUT"])
+def pronunciation_review_defer(request, word_id: int):
+    denied = require(request, "edit")
+    if denied is not None:
+        return denied
+    payload = data(request)
+    if set(payload) != {"deferred", "note"}:
+        raise services.BadRequest("Expected deferred and note fields")
+    return respond(pronunciation_review.defer(word_id, payload["note"], payload["deferred"]))
