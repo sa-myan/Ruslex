@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { editMode, reviewMode, user } from '../../lib/session';
+  import { editMode, reviewMode, workMode, user } from '../../lib/session';
   import { theme, toggleTheme } from '../../lib/theme';
   import NavLink from '../NavLink.svelte';
 
@@ -47,21 +47,16 @@
       <NavLink href="/review" title="Fast review" symbol="◈" onNavigate={onClose} />
     {/if}
     {#if $editMode}
+      <NavLink href="/pronunciation-review" title="Pronunciation review" symbol="◉" onNavigate={onClose} />
       <NavLink href="/new" title="Add entry" symbol="＋" onNavigate={onClose} />
     {/if}
   </nav>
 
   <div class="mt-auto p-4 border-t border-base-300 space-y-4">
-    {#if $user?.can_review}
+    {#if $user?.can_review || $user?.can_edit}
       <label class="flex justify-between items-center gap-3 text-sm">
-        <span>Review mode</span>
-        <input class="toggle toggle-primary toggle-sm" type="checkbox" bind:checked={$reviewMode} />
-      </label>
-    {/if}
-    {#if $user?.can_edit}
-      <label class="flex justify-between items-center gap-3 text-sm">
-        <span>Edit mode</span>
-        <input class="toggle toggle-primary toggle-sm" type="checkbox" bind:checked={$editMode} />
+        <span>Edit &amp; review mode</span>
+        <input class="toggle toggle-primary toggle-sm" type="checkbox" bind:checked={$workMode} />
       </label>
     {/if}
     <div class="flex items-center justify-between gap-2">

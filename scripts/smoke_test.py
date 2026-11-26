@@ -443,6 +443,49 @@ def check_pronunciation(anonymous, reviewer, editor, connections) -> None:
           == "пробаслово", "No reading falls back to original lemma")
 
 
+def check_pronunciation_review_jump(anonymous, reviewer, editor, connections) -> None:
+    """Navigate by exact headword or ID without editing the queue."""
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE name='pronunciation_review_queue'")
+        if cursor.fetchone() is None:
+            print("SKIP pronunciation jump API: optional queue schema not installed")
+            return
+
+    created = json_request(editor, "post", "/api/lexemes", {
+        "lemma": "пробапереход", "pos": "NOUN", "entry_type": "word",
+    })
+    check(created.status_code == 201, "Create disposable pronunciation jump target")
+    word_id = created.json()["id"]
+    route = "/api/pronunciation-review/next"
+    check(anonymous.get(route, {"queue": "all", "find": str(word_id)}).status_code == 403,
+          "Anonymous pronunciation queue cannot be queried")
+    check(reviewer.get(route, {"queue": "all", "find": str(word_id)}).status_code == 403,
+          "General reviewers cannot access editor-only pronunciation queue")
+    for target in (str(word_id), f"#{word_id}", "ПРОБАПЕРЕХОД"):
+        response = editor.get(route, {"queue": "all", "find": target})
+        check(response.status_code == 200 and response.json()["entry"]["id"] == word_id,
+              "Jump finds exact unresolved entry by ID or casefolded lemma")
+    missing = editor.get(route, {"queue": "all", "find": "not-a-real-lemma"})
+    check(missing.status_code == 200 and missing.json()["entry"] is None,
+          "Unknown jump target does not silently select another word")
+    invalid = editor.get(route, {"queue": "all", "find": " "})
+    check(invalid.status_code == 400, "Blank jump target is rejected")
+    huge = editor.get(route, {"queue": "all", "find": "#" + "9" * 40})
+    check(huge.status_code == 400, "Out-of-range ID is rejected")
+
+    deferred = json_request(editor, "put", f"/api/pronunciation-review/{word_id}/defer",
+                            {"deferred": True, "note": "test later"})
+    check(deferred.status_code == 200, "Can defer test word")
+    found = editor.get(route, {"queue": "all", "find": str(word_id)})
+    check(found.status_code == 200 and found.json()["deferred"],
+          "Jump includes deferred entries without clearing their notes")
+    pending = editor.get(route, {"queue": "pending", "find": str(word_id)})
+    check(pending.status_code == 200 and pending.json()["entry"] is None,
+          "Jump honors explicit queue filter")
+    json_request(editor, "put", f"/api/pronunciation-review/{word_id}/defer",
+                 {"deferred": False, "note": ""})
+
+
 def check_abbreviations(anonymous, editor, connections) -> None:
     """Abbreviations work as a third entry type on the migrated snapshot."""
     from django.http import QueryDict
@@ -554,6 +597,7 @@ def main() -> None:
         check_existing_tag_reuse(anonymous, editor, connections)
         check_editing_workflow(anonymous, editor)
         check_pronunciation(anonymous, reviewer, editor, connections)
+        check_pronunciation_review_jump(anonymous, reviewer, editor, connections)
         check_abbreviations(anonymous, editor, connections)
         check_signup(anonymous, User, SiteOptions)
         print("ALL DJANGO SMOKE TESTS PASSED; live databases were not touched")
