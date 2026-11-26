@@ -10,8 +10,11 @@ services:
       DATA_DIR: /data
     ports:
       - "127.0.0.1:8790:8000"
+    # The web app only needs the two writable databases. Never mount OCR,
+    # OpenRussian, backups or processing/state (which holds AI credentials).
     volumes:
-      - "${DATA_ROOT}:/data"
+      - "${DATA_ROOT}/lexicon:/data/lexicon"
+      - "${DATA_ROOT}/admin:/data/admin"
     networks:
       default: {}
       proxy:

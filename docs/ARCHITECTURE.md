@@ -69,6 +69,8 @@ serves. There is **no frontend Node service** on the live VPS.
 1. Git changes code. Docker images run code. SQLite backups protect data.
 2. The live lexicon is never part of the image or Git repository.
 3. The website does not call an LLM or depend on OpenCode being running.
+   Its container mounts only the writable `lexicon/` and `admin/` directories,
+   not OpenRussian, OCR, processing workspaces, backups or AI credentials.
 4. Processing must be reproducible from original OCR + a baseline snapshot.
 5. AI proposals are not authoritative: new data is validated and staged.
 6. Promotion is append-only, uses a fresh live-state comparison and backups,
