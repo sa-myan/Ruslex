@@ -1,7 +1,7 @@
 """Small permission-gated pronunciation queue independent of lexeme review.
 
 No OpenRussian source data or automated AI decisions are needed by the web app.
-The queue includes active words and abbreviations with no stored readings.
+The queue includes active words and abbreviations without verified readings.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _eligible_sql(queue: str) -> str:
         "LEFT JOIN pronunciation_review_queue q ON q.lexeme_id=l.id "
         "WHERE l.entry_type IN ('word','abbreviation') "
         "AND l.human_status!='hidden' "
-        "AND NOT EXISTS(SELECT 1 FROM lexeme_pronunciations p WHERE p.lexeme_id=l.id)"
+        "AND NOT EXISTS(SELECT 1 FROM lexeme_pronunciations p WHERE p.lexeme_id=l.id AND p.verification='verified')"
         + _queue_conditions(queue)
     )
 
@@ -83,11 +83,11 @@ def defer(word_id: int, note: object, deferred: object) -> dict:
             raise LookupError("Entry is unavailable for pronunciation review")
         if deferred:
             cursor.execute(
-                "SELECT 1 FROM lexeme_pronunciations WHERE lexeme_id=%s",
+                "SELECT 1 FROM lexeme_pronunciations WHERE lexeme_id=%s AND verification='verified'",
                 [word_id],
             )
             if cursor.fetchone() is not None:
-                raise ValueError("Entry already has a pronunciation")
+                raise ValueError("Entry already has a verified pronunciation")
             cursor.execute(
                 """INSERT INTO pronunciation_review_queue(lexeme_id,note,deferred_at)
                    VALUES(%s,%s,%s)
