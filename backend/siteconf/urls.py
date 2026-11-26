@@ -42,6 +42,8 @@ urlpatterns = [
     path("api/lexemes/<int:word_id>/references", dictionary.refs),
     path("api/lexemes/<int:word_id>/reference-pages", dictionary.ref_pages),
     path("api/review/next", dictionary.next_review),
+    path("api/pronunciation-review/next", dictionary.pronunciation_review_next),
+    path("api/pronunciation-review/<int:word_id>/defer", dictionary.pronunciation_review_defer),
     path("api/stats", dictionary.stats),
     path("api/books", dictionary.books),
     path("api/tags", dictionary.tags),
