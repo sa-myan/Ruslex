@@ -7,11 +7,20 @@
   import type { Entry } from '../lib/types';
 
   type Queue = 'pending' | 'deferred' | 'all';
-  type Response = { entry: Entry | null; total: number; note: string; deferred: boolean };
+  type Option = {
+    reading: string;
+    reference_ids: string[];
+    reference_types: string[];
+    reference_glosses: string[];
+    source_warnings: string[];
+  };
+  type Response = { entry: Entry | null; total: number; note: string; deferred: boolean; options: Option[] };
   let queue = $state<Queue>('pending');
   let after = $state(0);
   let result = $state<Response | null>(null);
   let note = $state('');
+  let draftReading = $state('');
+  let draftToken = $state(0);
   let busy = $state(false);
   let error = $state('');
   let notice = $state('');
@@ -30,12 +39,18 @@
       if (current === seq) {
         result = response;
         note = response.note;
+        draftReading = '';
+        draftToken = 0;
       }
     } catch (err) {
       if (current === seq) error = errorMessage(err);
     } finally {
       if (current === seq) busy = false;
     }
+  }
+  function useOption(reading: string): void {
+    draftReading = reading;
+    draftToken += 1;
   }
   function selectQueue(value: Queue): void {
     queue = value;
@@ -93,7 +108,7 @@
   <p class="kicker">Pronunciation workflow</p>
   <h2 class="text-3xl font-bold">Stress and ё review</h2>
   <p class="text-sm opacity-70 mt-2">
-    Entries without stored readings. Saving a reading removes it from this queue.
+    Entries without a verified reading, including existing OpenRussian-sourced or disputed readings. A saved, verified reading removes the entry from this queue.
     Deferrals are separate from the dictionary's general review status.
   </p>
 </div>
@@ -147,8 +162,48 @@
           {/each}
         </div>
       {/if}
+      {#if result.options.length}
+        <section class="mt-5">
+          <h4 class="font-semibold mb-1">OpenRussian reading alternatives</h4>
+          <p class="text-xs opacity-65 mb-3">
+            Offline reference suggestions, not verified Ruslex readings.
+            Choose one to prefill the editor, then check the meanings and explicitly save.
+            <a class="link" href="https://en.openrussian.org/" target="_blank" rel="noopener noreferrer">OpenRussian</a>
+            · <a class="link" href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>
+          </p>
+          <div class="space-y-2">
+            {#each result.options as option (option.reading)}
+              <div class="border border-base-300 rounded-lg p-3 flex items-start justify-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                  <p class="russian text-xl font-medium">{option.reading}</p>
+                  {#if option.reference_glosses.length}
+                    <p class="text-sm mt-1">{option.reference_glosses.join('; ')}</p>
+                  {/if}
+                  <p class="text-xs opacity-60 mt-1">
+                    {option.reference_types.join(', ') || 'Unknown source type'}
+                  </p>
+                  {#if option.source_warnings.length}
+                    <p class="text-error text-xs mt-2">
+                      Source warning: {option.source_warnings.join('; ')}.
+                      Verify independently before manually entering a reading.
+                    </p>
+                  {/if}
+                </div>
+                <button type="button" class="btn btn-outline btn-sm"
+                  disabled={option.source_warnings.length > 0 || busy}
+                  onclick={() => useOption(option.reading)}>
+                  Use in editor
+                </button>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
       <div class="mt-5">
-        <PronunciationEditor {entry} {refresh} onSaved={saved} />
+        {#key entry.id}
+          <PronunciationEditor {entry} {refresh} onSaved={saved}
+            suggestedReading={draftReading} suggestionToken={draftToken} />
+        {/key}
       </div>
       <div class="mt-4 border-t border-base-300 pt-4">
         <label class="field">
