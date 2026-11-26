@@ -92,9 +92,9 @@ case "$command" in
     ;;
   pronunciation-review)
     case "${1:-}" in
-      init) compose run --rm --no-deps promoter python -m processing.cli pronunciation-review "$@" ;;
-      plan) compose run --rm --no-deps rehearsal python -m processing.cli pronunciation-review "$@" ;;
-      *) echo "Use ./process.sh pronunciation-review {plan|init --confirm}" >&2; exit 2 ;;
+      init|candidates-refresh) compose run --rm --no-deps promoter python -m processing.cli pronunciation-review "$@" ;;
+      plan|candidates-plan) compose run --rm --no-deps rehearsal python -m processing.cli pronunciation-review "$@" ;;
+      *) echo "Use ./process.sh pronunciation-review {plan|init|candidates-plan|candidates-refresh}" >&2; exit 2 ;;
     esac
     ;;
   abbreviations)
