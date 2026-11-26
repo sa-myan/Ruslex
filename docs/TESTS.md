@@ -6,7 +6,7 @@
 cd /srv/apps/ruslex
 python3 scripts/offline_checks.py
 ./manage.sh build    # runs Svelte type check and Vite compilation
-./manage.sh test     # Django smoke tests on disposable database copies
+./manage.sh test     # Django smoke tests in a networkless read-only container
 ./manage.sh health
 ```
 
@@ -16,7 +16,12 @@ processing image. The processing container contains `pymorphy3` for real OCR
 imports, not required by the fake-analyzer safety tests.
 
 `./manage.sh test` uses a separate admin DB and a copy of the live lexicon.
-It must not write to the production DB. Browser checks still needed: search,
+It cannot write to the production DB: the container mounts only the source
+lexicon read-only, has no access to admin.db/processing/reference, and creates
+both test databases in ephemeral /tmp. The full frontend Vitest suite now runs
+in CI alongside Svelte checks and the build. A separate CI job runs the
+Django smoke tests against a seeded, disposable lexicon with abbreviations,
+pronunciation review and inflection schemas enabled. Browser checks still needed: search,
 sense editing, public notes, tags, relations, hidden words, save messages,
 login, and portrait navigation.
 

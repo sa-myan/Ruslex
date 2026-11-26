@@ -25,6 +25,24 @@ case "$command" in
   remove-containers) docker compose down --remove-orphans ;;
   admin) docker compose exec web python manage.py createsuperuser "$@" ;;
   shell) docker compose exec web python manage.py shell ;;
-  test) docker compose run --rm --no-deps --entrypoint python web /app/scripts/smoke_test.py ;;
+  test)
+    # Only a read-only lexicon source is supplied. The smoke runner creates
+    # its own isolated lexicon/admin copies under /tmp; it cannot write live data,
+    # read OpenRussian, or access AI credentials, and has no network.
+    [ -f .env ] || { echo 'Missing .env; run ./manage.sh init first.' >&2; exit 1; }
+    data_root=$(sed -n 's/^DATA_ROOT=//p' .env | tail -n 1)
+    uid=$(sed -n 's/^PUID=//p' .env | tail -n 1)
+    gid=$(sed -n 's/^PGID=//p' .env | tail -n 1)
+    case "$data_root" in /*) ;; *) echo 'DATA_ROOT must be an absolute path' >&2; exit 1 ;; esac
+    case "$uid" in ''|*[!0-9]*) echo 'PUID must be numeric' >&2; exit 1 ;; esac
+    case "$gid" in ''|*[!0-9]*) echo 'PGID must be numeric' >&2; exit 1 ;; esac
+    docker run --rm --network none --read-only \
+      --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+      --user "$uid:$gid" \
+      -v "$data_root/lexicon:/data/lexicon:ro" \
+      -e DATA_DIR=/data \
+      -e DJANGO_SECRET_KEY=isolated-smoke-test-only \
+      --entrypoint python ruslex:local /app/scripts/smoke_test.py
+    ;;
   *) printf '%s\n' 'Usage: ./manage.sh {init|publish|unpublish|doctor|lock|build|migrate|deploy|health|status|logs|check|backup|restore|start|stop|disable|remove-containers|admin|shell|test}';;
 esac

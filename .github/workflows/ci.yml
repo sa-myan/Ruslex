@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Executable launcher permissions
+        run: test -x manage.sh && test -x process.sh && test -x deploy.sh && test -x scripts/entrypoint.sh
       - name: Python offline regression tests
         run: python scripts/offline_checks.py
 
@@ -31,6 +33,23 @@ jobs:
       - name: Svelte type checks
         working-directory: frontend
         run: npm run check
+      - name: Frontend regression tests
+        working-directory: frontend
+        run: npm test
       - name: Frontend build
         working-directory: frontend
         run: npm run build
+
+  django-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Django runtime
+        run: pip install -r backend/requirements.txt
+      - name: Exercise complete Django API on a synthetic database
+        env:
+          PYTHONPATH: .:backend
+        run: python scripts/ci_smoke_fixture.py

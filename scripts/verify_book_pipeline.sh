@@ -53,10 +53,11 @@ docker compose -f docker-compose.processing.yml run --rm --no-deps rehearsal \
   "/work/form_rehearsals/$stamp/backups"
 
 printf '\n== Django smoke tests using the migrated disposable dictionary ==\n'
-docker run --rm --network none \
-  -v "$data_root:/data:ro" \
+docker run --rm --network none --read-only \
+  --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+  -v "$db_path:/data/lexicon/lexicon.db:ro" \
   -e DATA_DIR=/data \
-  -e RUSLEX_SMOKE_LEXICON_SOURCE="/data/processing/form_rehearsals/$stamp/lexicon.db" \
+  -e DJANGO_SECRET_KEY=isolated-book-rehearsal-only \
   --entrypoint python ruslex-book-check-web:local /app/scripts/smoke_test.py
 
 printf '\nPASS: new-book and word-form checks completed; live data untouched.\n'
