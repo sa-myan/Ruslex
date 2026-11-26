@@ -9,7 +9,6 @@
   let { forms, pos }: Props = $props();
   let showOther = $state(false);
   let showAnalyses = $state(false);
-  let showOther = $state(false);
   const organized = $derived(organizeWordForms(forms, pos));
 </script>
 {#if organized.unique.length}
