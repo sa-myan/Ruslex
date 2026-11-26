@@ -52,7 +52,7 @@ def configure(action: str, *, dry_run: bool = False) -> str:
     # Never create a duplicate host declaration or remove it accidentally.
     main_text = main.read_text()
     inline = re.search(
-        r"(?m)^" + re.escape(host) + r"\\s*\\{(?P<body>[^{}]*)\\}",
+        r"(?m)^" + re.escape(host) + r"\s*\{(?P<body>[^{}]*)\}",
         main_text,
     )
     if inline:
@@ -73,7 +73,7 @@ def configure(action: str, *, dry_run: bool = False) -> str:
         ):
             raise ValueError(f"Hostname is already declared by {other}")
 
-    expected = MARKER + f"{host} {{\\n    encode zstd gzip\\n    reverse_proxy ruslex-web:8000\\n}}\\n"
+    expected = MARKER + f"{host} {{\n    encode zstd gzip\n    reverse_proxy ruslex-web:8000\n}}\n"
     if action == "publish":
         new = expected
     elif action == "unpublish":
