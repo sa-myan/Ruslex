@@ -67,7 +67,8 @@ def plan(live: Path) -> dict:
                JOIN lexemes l ON l.id=q.lexeme_id
                WHERE l.entry_type IN ('word','abbreviation') AND l.human_status!='hidden'
                  AND NOT EXISTS(
-                     SELECT 1 FROM lexeme_pronunciations p WHERE p.lexeme_id=l.id
+                     SELECT 1 FROM lexeme_pronunciations p
+                     WHERE p.lexeme_id=l.id AND p.verification='verified'
                  )"""
         ).fetchone()[0] if ready else 0
     return {"schema_ready": ready, "unresolved": pending,
@@ -94,7 +95,8 @@ def _candidates(db, source) -> list[tuple]:
         source_id for item in audits
         for source_id in item["reference_ids"].split(",") if source_id
     ))
-    refs = {item.word_id: item for item in word_rows(source) if item.word_id in set(ids)}
+    wanted_ids = set(ids)
+    refs = {item.word_id: item for item in word_rows(source) if item.word_id in wanted_ids}
     glosses = _english_glosses(source, ids)
     result = []
     for item in audits:
@@ -136,6 +138,8 @@ def refresh_candidates(live: Path, reference: Path, backups: Path) -> dict:
     with connect_reference(reference) as ref, write_database(live) as db:
         db.execute("BEGIN IMMEDIATE")
         options = _candidates(db, ref)
+        if reference_fingerprint(reference) != fingerprint:
+            raise RuntimeError("OpenRussian reference changed; aborting")
         if len(options) != prior["candidate_rows"]:
             raise RuntimeError("Candidate count changed; aborting")
         db.execute("DELETE FROM pronunciation_review_candidates")
