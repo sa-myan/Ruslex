@@ -38,7 +38,8 @@ def plan(live: Path) -> dict:
                WHERE l.entry_type IN ('word','abbreviation')
                  AND l.human_status!='hidden'
                  AND NOT EXISTS(
-                     SELECT 1 FROM lexeme_pronunciations p WHERE p.lexeme_id=l.id
+                     SELECT 1 FROM lexeme_pronunciations p
+                     WHERE p.lexeme_id=l.id AND p.verification='verified'
                  )"""
         ).fetchone()[0]
         ready = installed(db)
