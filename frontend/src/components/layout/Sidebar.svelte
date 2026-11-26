@@ -47,6 +47,7 @@
       <NavLink href="/review" title="Fast review" symbol="◈" onNavigate={onClose} />
     {/if}
     {#if $editMode}
+      <NavLink href="/pronunciation-review" title="Pronunciation review" symbol="◉" onNavigate={onClose} />
       <NavLink href="/new" title="Add entry" symbol="＋" onNavigate={onClose} />
     {/if}
   </nav>
