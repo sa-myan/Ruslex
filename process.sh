@@ -99,9 +99,9 @@ case "$command" in
     ;;
   forms)
     case "${1:-}" in
-      init|backfill) compose run --rm --no-deps promoter python -m processing.cli forms "$@" ;;
-      plan|rehearse) compose run --rm --no-deps rehearsal python -m processing.cli forms "$@" ;;
-      *) echo "Use ./process.sh forms {plan|rehearse|init|backfill}" >&2; exit 2 ;;
+      init|backfill|stress-init|stress-apply) compose run --rm --no-deps promoter python -m processing.cli forms "$@" ;;
+      plan|rehearse|stress-plan|stress-rehearse) compose run --rm --no-deps rehearsal python -m processing.cli forms "$@" ;;
+      *) echo "Use ./process.sh forms {plan|rehearse|init|backfill|stress-plan|stress-rehearse|stress-init|stress-apply}" >&2; exit 2 ;;
     esac
     ;;
   book-promote)
