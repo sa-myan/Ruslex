@@ -58,6 +58,12 @@ class RuntimeIsolationTests(unittest.TestCase):
                                  or "/admin" in a or "/ocr" in a or "/backups" in a
                                  for a in args if a.startswith("/srv/")))
 
+    def test_book_rehearsal_smoke_mounts_only_disposable_snapshot(self):
+        script = (PROJECT / "scripts/verify_book_pipeline.sh").read_text(encoding="utf-8")
+        self.assertIn('-v "$db_path:/data/lexicon/lexicon.db:ro"', script)
+        self.assertIn("--network none --read-only", script)
+        self.assertNotIn('-v "$data_root:/data:ro"', script)
+
     def test_smoke_launcher_rejects_invalid_root_before_docker(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

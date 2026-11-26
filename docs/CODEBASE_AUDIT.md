@@ -43,7 +43,8 @@ live lexicon write access.
   **read-only source** copy of the real dictionary; no network, no admin or
   model credential mount, and no writes to live data.
 - `sh scripts/verify_book_pipeline.sh`: Docker build, worker/rehearsal and
-  morphology/abbreviation migration tests on disposable copies; requires VPS
+  morphology/abbreviation migration tests on disposable copies; the smoke
+  container mounts only the rehearsed database file read-only. Requires VPS
   Docker, working permissions and a readable source lexicon.
 
 ## Live-only checks and limitations
