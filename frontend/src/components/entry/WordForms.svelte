@@ -1,11 +1,14 @@
 <script lang="ts">
   import type { WordForm } from '../../lib/types';
+  import { organizeWordForms } from '../../lib/wordForms';
 
   interface Props {
     forms: WordForm[];
+    pos: string;
   }
-  let { forms }: Props = $props();
+  let { forms, pos }: Props = $props();
   let expanded = $state(false);
+  const organized = $derived(organizeWordForms(forms, pos));
 
   // One spelling may have several distinct grammatical analyses.
   const unique = $derived(
