@@ -7,7 +7,7 @@
   import type { Entry } from '../lib/types';
 
   type Queue = 'pending' | 'deferred' | 'all';
-  type Response = { entry: Entry | null; total: number; note: string };
+  type Response = { entry: Entry | null; total: number; note: string; deferred: boolean };
   let queue = $state<Queue>('pending');
   let after = $state(0);
   let result = $state<Response | null>(null);
@@ -162,7 +162,7 @@
           ></textarea>
         </label>
         <div class="flex flex-wrap gap-2 mt-3">
-          {#if queue === 'deferred' || (queue === 'all' && result.note)}
+          {#if result.deferred}
             <button class="btn btn-outline btn-sm" disabled={busy}
               onclick={() => saveDeferral(false)}>Return to pending</button>
           {:else}
