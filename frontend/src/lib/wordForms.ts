@@ -86,8 +86,17 @@ export function organizeWordForms(forms: WordForm[], pos: string): OrganizedForm
     declension('Declension', has(pos));
   }
   if (pos === 'ADJF' || pos === 'ADJS' || pos === 'COMP') {
-    declension('Full adjective forms', has('ADJF'), true);
-    short('Short adjective forms', has('ADJS'));
+    // OpenCorpora marks inflected superlatives with Supr; comparatives use
+    // COMP (and optionally Cmp2). Neither belongs in the positive paradigm.
+    const positive = hasNo('Supr', 'COMP', 'Cmp2');
+    declension('Positive degree · full forms', both(has('ADJF'), positive), true);
+    short('Positive degree · short forms', both(has('ADJS'), positive));
+    add('Comparative degree', ['Form'], [
+      ['Standard', [both(has('COMP'), hasNo('Cmp2'))]],
+      ['Variant with по-', [has('Cmp2')]],
+    ]);
+    declension('Superlative degree · full forms', has('ADJF', 'Supr'), true);
+    short('Superlative degree · short forms', has('ADJS', 'Supr'));
   }
   if (pos === 'VERB' || pos === 'INFN') {
     add('Infinitive', ['Form'], [['Infinitive', [has('INFN')]]]);
