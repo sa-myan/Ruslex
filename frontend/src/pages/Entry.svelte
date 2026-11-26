@@ -22,6 +22,10 @@
 
   const reviewStatuses: Status[] = ['unreviewed', 'kept', 'followup', 'hidden'];
 
+  function partLabel(pos: string): string {
+    return metadata?.parts_of_speech.find((part) => part.code === pos)?.label ?? pos;
+  }
+
   let entry = $state<DictionaryEntry | null>(null);
   let metadata = $state<Metadata | null>(null);
   let availableTags = $state<Tag[]>([]);
@@ -148,7 +152,7 @@
       <p class="kicker">{entry.entry_type === 'expression' ? 'Expression' : entry.entry_type === 'abbreviation' ? 'Abbreviation' : 'Word'}</p>
       <h2 class="text-3xl md:text-4xl russian font-bold mt-2">{entry.stressed_lemma ?? entry.lemma}</h2>
       <div class="flex flex-wrap gap-2 mt-3">
-        <span class="badge badge-neutral">{metadata?.parts_of_speech.find((part) => part.code === entry.pos)?.label ?? entry.pos}</span>
+        <span class="badge badge-neutral">{partLabel(entry.pos)}</span>
         {#if entry.aspect}<span class="badge badge-outline">{entry.aspect}</span>{/if}
         {#if entry.animacy}<span class="badge badge-outline">{entry.animacy}</span>{/if}
         {#if $reviewMode}<span class="badge badge-warning">{entry.human_status}</span>{/if}
