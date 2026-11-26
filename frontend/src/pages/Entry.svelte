@@ -148,7 +148,7 @@
       <p class="kicker">{entry.entry_type === 'expression' ? 'Expression' : entry.entry_type === 'abbreviation' ? 'Abbreviation' : 'Word'}</p>
       <h2 class="text-3xl md:text-4xl russian font-bold mt-2">{entry.stressed_lemma ?? entry.lemma}</h2>
       <div class="flex flex-wrap gap-2 mt-3">
-        <span class="badge badge-neutral">{entry.pos}</span>
+        <span class="badge badge-neutral">{metadata?.parts_of_speech.find((part) => part.code === entry.pos)?.label ?? entry.pos}</span>
         {#if entry.aspect}<span class="badge badge-outline">{entry.aspect}</span>{/if}
         {#if entry.animacy}<span class="badge badge-outline">{entry.animacy}</span>{/if}
         {#if $reviewMode}<span class="badge badge-warning">{entry.human_status}</span>{/if}
@@ -167,7 +167,7 @@
     </div>
   </div>
 
-  {#if $editMode && entry.entry_type === 'word' || entry.entry_type === 'abbreviation'}
+  {#if $editMode && (entry.entry_type === 'word' || entry.entry_type === 'abbreviation')}
     <PronunciationEditor {entry} {refresh} />
   {/if}
 
@@ -235,8 +235,8 @@
     {/each}
   {/if}
 
-  {#if entry.entry_type === 'word'}
-    <WordForms forms={entry.word_forms ?? []} />
+  {#if entry.entry_type === 'word' || entry.entry_type === 'abbreviation'}
+    <WordForms forms={entry.word_forms ?? []} pos={entry.pos} />
   {/if}
 
   <RelationList
