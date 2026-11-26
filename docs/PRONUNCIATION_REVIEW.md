@@ -1,53 +1,92 @@
-# Manual pronunciation review queue
+# Editing and pronunciation review
 
-The site now offers **Pronunciation review** when Edit mode is enabled. The
-feature is for manually resolving unresolved stress, ё spelling and
-meaning-specific homographs. It does **not** call an LLM, consult OpenRussian
-from the web server, or change the existing ordinary lexeme review status.
+Ruslex now has a single **Edit & review mode** switch in the sidebar.
+Its features still honor the existing Django edit and review permissions:
+enabling the visual mode does not grant permission to perform any operation.
 
-The queue includes active ordinary words and abbreviations without any
-pronunciation record. It has three views: Pending, Deferred, and All unresolved.
-Each entry displays its stored English meanings and sample textbook context,
-and reuses the existing stress/ё editor to save a reading and optionally
-associate it with meanings. Successful saves leave the unresolved queue.
-Deferrals are reversible and can include a private note (up to 1000 chars).
-Skipping moves to the next entry; the queue wraps around.
+## Pronunciation review
 
-**Limitations:** For this first UI, unresolved means *no pronunciation stored*.
-Existing source-backed or disputed readings are not included even if they
-could benefit from human verification. They can still be managed on the
-individual entry's editor. The queue does not automatically select between
-ambiguous OpenRussian candidates.
+The **Pronunciation review** page covers active words and abbreviations
+with **no verified pronunciation**. It includes entries with no reading,
+OpenRussian source-backed readings, and disputed readings. A manually
+verified reading removes an entry from the queue. For now, one verified
+reading is sufficient: follow-up work may require separate review for
+additional sense-specific readings.
 
-## Install on the existing single-user VPS without merging
+Choose **Pending**, **Deferred**, or **All unresolved**. Each entry shows
+its meanings, textbook excerpts, and existing pronunciation records.
+Use the existing pronunciation editor to mark stress, correct е/ё,
+assign sense IDs, and explicitly save. There is no automatic acceptance.
 
-This is a new optional schema in the existing lexicon SQLite database.
-It must be explicitly initialized before using the new page.
+**Deferred** is a reversible private note independent of the ordinary
+lexeme review status. Skip does not change any data. The review queue
+does not change the human status of any dictionary entry.
+
+### OpenRussian alternatives
+
+An optional **offline cache** shows OpenRussian headword readings,
+source part-of-speech labels, English glosses and warnings, clearly
+separated by reading. For meaning-distinct homographs, the user
+must choose the appropriate reading using the supplied context.
+
+The public web server **never opens the OpenRussian SQLite dump**.
+The source is mounted read-only in the isolated processing container;
+candidate records, with the source fingerprint, are copied into a
+small editor-only SQLite cache. The display includes OpenRussian
+attribution and CC BY-SA 4.0 license notice.
+
+Clicking **Use in editor** only pre-fills the existing pronunciation
+editor. It edits an existing record when the stressed spelling already
+exists. Otherwise it prepares a new record. The user must still press
+**Save reading**. Entries with source warnings cannot be filled via
+this shortcut; independent verification and manual entry are possible.
+
+Manual approvals are stored as verified manual readings, not falsely
+attributed to a source record. Candidates are not automatically
+linked to senses and never silently update other dictionary records.
+
+## Test directly on the existing VPS without merging
+
+Make sure the working tree is clean, and test the branch directly
+on the single-user site:
 
 ```sh
 cd /srv/apps/ruslex
-git status --short  # must be clean
+git status --short
 git fetch origin
 git switch --detach origin/feat/pronunciation-review-queue
+
 ./process.sh build
 ./process.sh pronunciation-review plan
+./process.sh pronunciation-review candidates-plan
+
 ./manage.sh backup
 ./process.sh pronunciation-review init --confirm
+./process.sh pronunciation-review candidates-refresh --confirm
 ./process.sh pronunciation-review plan
+
 ./manage.sh deploy
 ./manage.sh health
 ./manage.sh check
 ```
 
-The `plan` command is read-only, `init` takes an extra consistent lexicon
-backup before creating one table, and re-running it is harmless. This
-modifies no existing pronunciation records, lexemes, senses or page evidence.
-The usual `./manage.sh deploy` may briefly interrupt the public website.
+The initial plans are read-only. The `init` action is idempotent
+and backs up the SQLite database before adding the queue and optional
+candidate tables. It also upgrades an installation from the initial
+PR #9 queue version without losing deferral notes. The
+`candidates-refresh` action backs up the lexicon again and atomically
+replaces **only cached source suggestions**, never saved pronunciations.
+It may be repeated after updating the OpenRussian reference dump.
 
-Open the usual website, log in with edit permission, enable **Edit mode**, and
-select **Pronunciation review** from the sidebar. Try deferring an entry,
-reopening it from the Deferred queue, and saving a pronunciation.
+**Important:** the first `candidates-plan` may report
+`schema_ready: false` until `init --confirm` has completed. Inspect
+its sample and the candidate counts before applying.
 
-A code-only rollback is `git switch main && ./manage.sh deploy`. The
-optional new SQLite table is safe to leave in place, and no database restore
-is necessary. Keep the feature unmerged until you've reviewed the interface.
+Open the normal Ruslex URL, sign in, turn on **Edit & review mode**,
+then open **Pronunciation review**. Test missing, source-backed, disputed,
+deferred and meaning-ambiguous entries. Confirm that users without
+edit permission cannot use the page's API.
+
+This is not yet merged. Roll back code with:
+`git switch main && ./manage.sh deploy`. Leave the optional
+new tables in place; no data restore is required for a code rollback.
