@@ -60,6 +60,50 @@ describe('complete Russian morphology tables', () => {
     ]);
   });
 
+  it('keeps superlatives and comparatives out of positive adjective forms', () => {
+    const o = organizeWordForms([
+      f('красивый', 'ADJF,masc,nomn,sing'),
+      f('красивая', 'ADJF,femn,nomn,sing'),
+      f('красив', 'ADJS,masc,sing'),
+      f('красивее', 'COMP'),
+      f('покрасивее', 'COMP,Cmp2'),
+      f('красивейший', 'ADJF,Supr,masc,nomn,sing'),
+      f('красивейшая', 'ADJF,Supr,femn,nomn,sing'),
+      f('красивейших', 'ADJF,Supr,plur,gent'),
+    ], 'ADJF');
+    expect(o.tables.map(t => t.title)).toEqual([
+      'Positive degree · full forms',
+      'Positive degree · short forms',
+      'Comparative degree',
+      'Superlative degree · full forms',
+    ]);
+    expect(o.tables[0].rows[0].cells).toEqual([
+      ['красивый'], ['красивая'], [], [],
+    ]);
+    expect(o.tables[1].rows[0].cells).toEqual([['красив']]);
+    expect(o.tables[2].rows.map(r => r.cells[0])).toEqual([
+      ['красивее'], ['покрасивее'],
+    ]);
+    expect(o.tables[3].rows[0].cells).toEqual([
+      ['красивейший'], ['красивейшая'], [], [],
+    ]);
+    expect(o.tables[3].rows.find(r => r.label === 'Genitive')?.cells[3])
+      .toEqual(['красивейших']);
+    expect(o.tables.some(t => t.title === 'Additional inflections')).toBe(false);
+    expect(o.uniqueCount).toBe(8);
+  });
+
+  it('keeps a standalone comparative entry in its own table', () => {
+    const o = organizeWordForms([
+      f('лучше', 'COMP'),
+      f('получше', 'COMP,Cmp2'),
+    ], 'COMP');
+    expect(o.tables.map(t => t.title)).toEqual(['Comparative degree']);
+    expect(o.tables[0].rows.map(r => r.cells[0])).toEqual([
+      ['лучше'], ['получше'],
+    ]);
+  });
+
   it('keeps unsupported grammemes in a visible additional table', () => {
     const o = organizeWordForms([f('как', 'ADVB'), f('как', 'CONJ')], 'ADVB');
     expect(o.tables).toHaveLength(1);
