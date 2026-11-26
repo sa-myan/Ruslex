@@ -19,6 +19,7 @@
   let after = $state(0);
   let result = $state<Response | null>(null);
   let note = $state('');
+  let jumpTerm = $state('');
   let draftReading = $state('');
   let draftToken = $state(0);
   let busy = $state(false);
@@ -42,6 +43,36 @@
         draftReading = '';
         draftToken = 0;
       }
+    } catch (err) {
+      if (current === seq) error = errorMessage(err);
+    } finally {
+      if (current === seq) busy = false;
+    }
+  }
+  async function jumpToEntry(): Promise<void> {
+    const term = jumpTerm.trim();
+    if (!term || busy) return;
+    const current = ++seq;
+    busy = true;
+    error = '';
+    notice = '';
+    try {
+      // Search the whole unresolved queue, including deferred entries; no writes.
+      const response = await request<Response>(
+        `/api/pronunciation-review/next?queue=all&find=${encodeURIComponent(term)}`,
+      );
+      if (current !== seq) return;
+      if (!response.entry) {
+        error = `No unresolved entry matches "${term}". Check the exact lemma or ID; verified and hidden entries are excluded.`;
+        return;
+      }
+      queue = 'all';
+      after = response.entry.id;
+      result = response;
+      note = response.note;
+      draftReading = '';
+      draftToken = 0;
+      jumpTerm = '';
     } catch (err) {
       if (current === seq) error = errorMessage(err);
     } finally {
@@ -128,6 +159,18 @@
     </label>
     <span class="badge badge-outline">{result?.total ?? '—'} entries</span>
   </div>
+  <form class="flex flex-wrap items-end gap-2 mt-4"
+    onsubmit={(event) => { event.preventDefault(); void jumpToEntry(); }}>
+    <label class="field flex-1 min-w-48">
+      <span>Jump to unresolved entry</span>
+      <input type="search" class="input input-bordered w-full russian"
+        placeholder="Exact Russian headword or #123" maxlength="150"
+        bind:value={jumpTerm} />
+    </label>
+    <button type="submit" class="btn btn-outline btn-sm"
+      disabled={busy || !jumpTerm.trim()}>Find entry</button>
+  </form>
+  <p class="text-xs opacity-60 mt-2">Finds an exact lemma or entry ID across pending and deferred entries, without changing their status.</p>
   {#if notice}<p class="text-success text-sm mt-3" role="status">{notice}</p>{/if}
   {#if error}<p class="text-error text-sm mt-3" role="alert">{error}</p>{/if}
   {#if busy}<div class="loading loading-spinner mt-4" aria-label="Loading pronunciation queue"></div>{/if}

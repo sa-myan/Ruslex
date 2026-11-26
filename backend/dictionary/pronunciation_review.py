@@ -64,19 +64,30 @@ def _reference_options(word_id: int) -> list[dict]:
     } for row in rows]
 
 
-def next_entry(queue: str = "pending", after: int = 0) -> dict:
+def next_entry(queue: str = "pending", after: int = 0, find: str | None = None) -> dict:
     if type(after) is not int or after < 0:
         raise ValueError("Invalid pronunciation review cursor")
     if not installed():
         raise RuntimeError("Pronunciation review queue is not initialized")
     where = _eligible_sql(queue)
     total = legacy_rows("SELECT COUNT(*) AS n " + where)[0]["n"]
-    rows = legacy_rows(
-        "SELECT l.id, q.note, q.lexeme_id AS deferred_id " + where + " AND l.id > %s ORDER BY l.id LIMIT 1",
-        [after],
-    )
-    if not rows:
-        rows = legacy_rows("SELECT l.id,q.note,q.lexeme_id AS deferred_id " + where + " ORDER BY l.id LIMIT 1")
+    select = "SELECT l.id,q.note,q.lexeme_id AS deferred_id " + where
+    if find is not None:
+        term = find.strip()
+        if not term or len(term) > 150:
+            raise ValueError("Enter an exact headword or entry ID (up to 150 characters)")
+        numeric = term[1:] if term.startswith("#") else term
+        if numeric.isascii() and numeric.isdecimal():
+            entry_id = int(numeric)
+            if entry_id < 1 or entry_id > 9223372036854775807:
+                raise ValueError("Invalid entry ID")
+            rows = legacy_rows(select + " AND l.id = %s ORDER BY l.id LIMIT 1", [entry_id])
+        else:
+            rows = legacy_rows(select + " AND l.lemma = %s ORDER BY l.id LIMIT 1", [term.casefold()])
+    else:
+        rows = legacy_rows(select + " AND l.id > %s ORDER BY l.id LIMIT 1", [after])
+        if not rows:
+            rows = legacy_rows(select + " ORDER BY l.id LIMIT 1")
     if not rows:
         return {"entry": None, "total": total, "note": "", "deferred": False, "options": []}
     from .query_detail import detail

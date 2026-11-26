@@ -22,6 +22,12 @@ assign sense IDs, and explicitly save. There is no automatic acceptance.
 lexeme review status. Skip does not change any data. The review queue
 does not change the human status of any dictionary entry.
 
+Use **Jump to unresolved entry** to find an exact Russian headword (case
+insensitive, preserving ё) or an entry ID such as `#123`. This searches
+pending and deferred entries, switches to *All unresolved* on success, and
+leaves the current entry unchanged on no match. Already verified, hidden
+and expression entries are excluded. No deferrals or pronunciations change.
+
 ### OpenRussian alternatives
 
 An optional **offline cache** shows OpenRussian headword readings,

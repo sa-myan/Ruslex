@@ -352,7 +352,9 @@ def pronunciation_review_next(request):
         after = int(request.GET.get("after", "0"))
     except (ValueError, TypeError) as exc:
         raise services.BadRequest("Invalid pronunciation review cursor") from exc
-    return respond(pronunciation_review.next_entry(request.GET.get("queue", "pending"), after))
+    return respond(pronunciation_review.next_entry(
+        request.GET.get("queue", "pending"), after, request.GET.get("find")
+    ))
 
 
 @api_errors
