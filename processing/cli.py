@@ -31,6 +31,7 @@ from .reference_audit import audit_entries, write_report, suggested_report_path
 from .stress_diagnostics import diagnose as diagnose_stress
 from .stress_ai import analyze as stress_ai_analyze, plan as stress_ai_plan, apply as stress_ai_apply, parse_approval_ids, preview_approvals as stress_ai_approval_preview
 from .pronunciations import initialize as stress_initialize, backfill_plan as stress_plan, apply_backfill as stress_apply, rehearse as stress_rehearse
+from .pronunciation_review import initialize as review_init, plan as review_plan
 from .ocr import import_book, inspect
 from .promotion import create_workspace, plan, promote, workspace_paths
 from .storage import atomic_json, inventory, prepare, read_database, write_database
@@ -65,6 +66,12 @@ def main(argv=None):
     ref_lookup.add_argument("lemma", help="One Russian dictionary headword")
     ref_lookup.add_argument("--forms", action="store_true", help="Include inflected forms as reference data")
     reference_commands.add_parser("audit", help="Export stress/ё candidates for Ruslex lexemes")
+    review = commands.add_parser("pronunciation-review", help="Independent manual stress review queue")
+    review_actions = review.add_subparsers(dest="review_action", required=True)
+    review_actions.add_parser("plan", help="Read-only pronunciation queue counts")
+    review_actions.add_parser("init", help="Install deferral schema").add_argument(
+        "--confirm", action="store_true", required=True,
+    )
     stress = commands.add_parser("stress", help="Pronunciation migration and read-only plan")
     stress_actions = stress.add_subparsers(dest="stress_action", required=True)
     stress_actions.add_parser("plan", help="Show safe candidates; no writes")
@@ -201,7 +208,9 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
-        if args.command == "abbreviations":
+        if args.command == "pronunciation-review":
+            result = review_plan(LIVE_DB) if args.review_action == "plan" else review_init(LIVE_DB, BACKUP_ROOT)
+        elif args.command == "abbreviations":
             if args.abbr_action == "plan":
                 result = abbreviation_plan(LIVE_DB)
             elif args.abbr_action == "rehearse":
