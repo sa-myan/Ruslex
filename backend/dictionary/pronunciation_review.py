@@ -6,6 +6,7 @@ The queue includes active words and abbreviations without verified readings.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 
 from django.db import connections, transaction
 
@@ -41,6 +42,28 @@ def _eligible_sql(queue: str) -> str:
     )
 
 
+def _reference_options(word_id: int) -> list[dict]:
+    with connections[LEXICON].cursor() as cursor:
+        cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pronunciation_review_candidates'"
+        )
+        if cursor.fetchone() is None:
+            return []
+    rows = legacy_rows(
+        """SELECT reading,reference_ids,reference_types,reference_glosses,
+                  source_warnings,fingerprint
+           FROM pronunciation_review_candidates WHERE lexeme_id=%s ORDER BY reading""",
+        [word_id],
+    )
+    return [{
+        "reading": row["reading"],
+        "reference_ids": json.loads(row["reference_ids"]),
+        "reference_types": json.loads(row["reference_types"]),
+        "reference_glosses": json.loads(row["reference_glosses"]),
+        "source_warnings": json.loads(row["source_warnings"]),
+    } for row in rows]
+
+
 def next_entry(queue: str = "pending", after: int = 0) -> dict:
     if type(after) is not int or after < 0:
         raise ValueError("Invalid pronunciation review cursor")
@@ -55,13 +78,14 @@ def next_entry(queue: str = "pending", after: int = 0) -> dict:
     if not rows:
         rows = legacy_rows("SELECT l.id,q.note,q.lexeme_id AS deferred_id " + where + " ORDER BY l.id LIMIT 1")
     if not rows:
-        return {"entry": None, "total": total, "note": "", "deferred": False}
+        return {"entry": None, "total": total, "note": "", "deferred": False, "options": []}
     from .query_detail import detail
     return {
         "entry": detail(rows[0]["id"]),
         "total": total,
         "note": rows[0]["note"] or "",
         "deferred": rows[0]["deferred_id"] is not None,
+        "options": _reference_options(rows[0]["id"]),
     }
 
 
