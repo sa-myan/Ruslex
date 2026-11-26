@@ -2,13 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { organizeWordForms } from '../src/lib/wordForms';
 import type { WordForm } from '../src/lib/types';
 
-const f = (form: string, grammemes: string): WordForm => ({
-  form, grammemes, source: 'pymorphy3',
+const f = (form: string, grammemes: string, stressed?: string): WordForm => ({
+  form, grammemes, source: 'pymorphy3', stressed,
 });
-
-describe('organizeWordForms', () => {
-  it('groups noun cases and keeps alternate spellings without duplication', () => {
-    const organized = organizeWordForms([
+describe('complete Russian morphology tables', () => {
+  it('shows cases without losing duplicate grammatical analyses', () => {
+    const o = organizeWordForms([
       f('дом', 'NOUN,nomn,sing'),
       f('дома', 'NOUN,gent,sing'),
       f('дому', 'NOUN,datv,sing'),
@@ -16,52 +15,56 @@ describe('organizeWordForms', () => {
       f('дому', 'NOUN,loct,sing'),
       f('домы', 'NOUN,nomn,plur'),
     ], 'NOUN');
-    expect(organized.tables[0].title).toBe('Declension');
-    expect(organized.tables[0].rows.find((row) => row.label === 'Dative')?.cells[0])
-      .toEqual(['дому']);
-    expect(organized.tables[0].rows.find((row) => row.label === 'Second locative')).toBeUndefined();
-    expect(organized.unique).toHaveLength(5);
-    expect(organized.spellingCount).toBe(4);
-    expect(organized.other).toHaveLength(0);
+    expect(o.tables[0].title).toBe('Declension');
+    expect(o.tables[0].rows.find(row => row.label === 'Dative')?.cells[0]).toEqual(['дому']);
+    expect(o.uniqueCount).toBe(5);
+    expect(o.spellingCount).toBe(4);
   });
 
-  it('handles verb conjugation, past tense, imperative and keeps participles for review', () => {
-    const organized = organizeWordForms([
+  it('shows verb forms, participles and gerunds as tables, not a hidden list', () => {
+    const o = organizeWordForms([
       f('читать', 'INFN,impf,tran'),
-      f('читаю', 'VERB,1per,pres,sing,impf'),
+      f('читаю', 'VERB,1per,pres,sing,impf', 'чита́ю'),
       f('читаем', 'VERB,1per,pres,plur,impf'),
       f('читала', 'VERB,femn,past,sing,impf'),
       f('читай', 'VERB,impr,2per,sing,impf'),
+      f('читающий', 'PRTF,actv,pres,masc,nomn,sing'),
+      f('читающая', 'PRTF,actv,pres,femn,nomn,sing'),
+      f('читавший', 'PRTF,actv,past,masc,nomn,sing'),
+      f('читан', 'PRTS,pssv,past,masc,sing'),
       f('читая', 'GRND,impf,pres'),
     ], 'VERB');
-    expect(organized.tables.map((table) => table.title)).toEqual([
-      'Infinitive', 'Present', 'Past', 'Imperative',
+    expect(o.tables.map(t => t.title)).toEqual([
+      'Infinitive', 'Present', 'Past tense', 'Imperative',
+      'Present active participles', 'Past active participles',
+      'Past passive short participles', 'Gerunds',
     ]);
-    expect(organized.tables[1].rows[0].cells).toEqual([['читаю'], ['читаем']]);
-    expect(organized.other.map((item) => item.form)).toEqual(['читая']);
+    expect(o.tables[1].rows[0].cells).toEqual([['чита́ю'], ['читаем']]);
+    expect(o.tables.find(t => t.title === 'Gerunds')?.rows[0].cells).toEqual([['читая']]);
+    expect(o.accentedCount).toBe(1);
   });
 
-  it('presents adjective genders and short forms', () => {
-    const organized = organizeWordForms([
-      f('новый', 'ADJF,masc,nomn,sing'),
-      f('новая', 'ADJF,femn,nomn,sing'),
-      f('новое', 'ADJF,neut,nomn,sing'),
-      f('новые', 'ADJF,nomn,plur'),
-      f('нов', 'ADJS,masc,sing'),
-      f('нова', 'ADJS,femn,sing'),
+  it('shows full and short adjective paradigms', () => {
+    const o = organizeWordForms([
+      f('новый','ADJF,masc,nomn,sing'),
+      f('новая','ADJF,femn,nomn,sing'),
+      f('новое','ADJF,neut,nomn,sing'),
+      f('новые','ADJF,nomn,plur'),
+      f('нов','ADJS,masc,sing'),
     ], 'ADJF');
-    expect(organized.tables.map((table) => table.title)).toEqual(['Full forms', 'Short forms']);
-    expect(organized.tables[0].rows[0].cells).toEqual([
+    expect(o.tables.map(t=>t.title)).toEqual([
+      'Full adjective forms', 'Short adjective forms',
+    ]);
+    expect(o.tables[0].rows[0].cells).toEqual([
       ['новый'], ['новая'], ['новое'], ['новые'],
     ]);
   });
 
-  it('never discards unsupported grammatical analyses', () => {
-    const input = [f('как', 'ADVB'), f('как', 'CONJ')];
-    const organized = organizeWordForms(input, 'ADVB');
-    expect(organized.tables).toHaveLength(0);
-    expect(organized.other).toEqual(input);
-    expect(organized.unique).toHaveLength(2);
-    expect(organized.spellingCount).toBe(1);
+  it('keeps unsupported grammemes in a visible additional table', () => {
+    const o = organizeWordForms([f('как', 'ADVB'), f('как', 'CONJ')], 'ADVB');
+    expect(o.tables).toHaveLength(1);
+    expect(o.tables[0].title).toBe('Additional inflections');
+    expect(o.tables[0].rows).toHaveLength(2);
+    expect(o.spellingCount).toBe(1);
   });
 });
