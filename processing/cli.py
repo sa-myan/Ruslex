@@ -20,6 +20,10 @@ from .abbreviations import (
 )
 from .paradigms import (initialize as forms_initialize, plan as forms_plan,
                         backfill as forms_backfill, rehearse as forms_rehearse)
+from .form_stress import (
+    initialize as form_stress_initialize, plan as form_stress_plan,
+    apply as form_stress_apply, rehearse as form_stress_rehearse,
+)
 from .enrichment_merge import apply_enrichment
 from .forms import resolve, review_batch, apply_decisions
 from .openrussian import connect_reference, lookup, result as reference_result, verify_schema, reference_fingerprint
@@ -98,6 +102,11 @@ def main(argv=None):
     form_steps.add_parser("plan", help="Read-only headword form generation preview")
     form_steps.add_parser("rehearse", help="Generate on a disposable DB copy")
     for step in ("init", "backfill"):
+        item = form_steps.add_parser(step)
+        item.add_argument("--confirm", action="store_true", required=True)
+    form_steps.add_parser("stress-plan", help="Read-only OpenRussian inflected stress proposal")
+    form_steps.add_parser("stress-rehearse", help="Test inflected stress on an isolated database copy")
+    for step in ("stress-init", "stress-apply"):
         item = form_steps.add_parser(step)
         item.add_argument("--confirm", action="store_true", required=True)
     audit_cmd = commands.add_parser("audit", help="Read-only audit of live or staged dictionary")
@@ -208,8 +217,18 @@ def main(argv=None):
                 result = forms_rehearse(LIVE_DB, WORK_ROOT)
             elif args.forms_action == "init":
                 result = forms_initialize(LIVE_DB, BACKUP_ROOT)
-            else:
+            elif args.forms_action == "backfill":
                 result = forms_backfill(LIVE_DB, BACKUP_ROOT)
+            elif args.forms_action == "stress-plan":
+                result = form_stress_plan(LIVE_DB, REFERENCE_DB)
+            elif args.forms_action == "stress-rehearse":
+                result = form_stress_rehearse(LIVE_DB, REFERENCE_DB, WORK_ROOT)
+            elif args.forms_action == "stress-init":
+                result = form_stress_initialize(LIVE_DB, BACKUP_ROOT)
+            elif args.forms_action == "stress-apply":
+                result = form_stress_apply(LIVE_DB, REFERENCE_DB, BACKUP_ROOT)
+            else:
+                parser.error("Unknown forms command")
         elif args.command == "stress":
             if args.stress_action == "plan":
                 result = stress_plan(LIVE_DB, REFERENCE_DB)

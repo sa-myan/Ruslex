@@ -18,11 +18,29 @@ def installed() -> bool:
         return cursor.fetchone() is not None
 
 
+def _stress_installed() -> bool:
+    with connections[LEXICON].cursor() as cursor:
+        cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lexeme_form_stress'"
+        )
+        return cursor.fetchone() is not None
+
+
 def for_entry(word_id: int) -> list[dict]:
     if not installed():
         return []
+    if _stress_installed():
+        return legacy_rows(
+            """SELECT f.form,f.grammemes,f.source,s.stressed FROM lexeme_forms f
+               JOIN lexemes l ON l.id=f.lexeme_id
+               LEFT JOIN lexeme_form_stress s ON s.form_id=f.id
+               WHERE f.lexeme_id=%s
+                 AND f.lemma_at_generation=l.lemma AND f.pos_at_generation=l.pos
+               ORDER BY f.form_key,f.form,f.grammemes""",
+            [word_id],
+        )
     return legacy_rows(
-        """SELECT f.form,f.grammemes,f.source FROM lexeme_forms f
+        """SELECT f.form,f.grammemes,f.source,NULL AS stressed FROM lexeme_forms f
            JOIN lexemes l ON l.id=f.lexeme_id
            WHERE f.lexeme_id=%s
              AND f.lemma_at_generation=l.lemma AND f.pos_at_generation=l.pos
