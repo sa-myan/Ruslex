@@ -198,3 +198,17 @@ export interface Stats {
   word_status: Record<string, number>;
   review_status: Record<string, number>;
 }
+
+export interface Construction {
+  id: number;
+  pattern: string;
+  meaning: string;
+  grammar: string;
+  human_status: Status;
+  examples: { russian: string; english: string }[];
+  sources: { page_id: number; title: string; pdf_page: number; surface: string }[];
+  expressions: { id: number; lemma: string; evidence: string }[];
+}
+export interface ConstructionPage extends Page<Construction> {
+  installed: boolean;
+}

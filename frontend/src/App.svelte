@@ -14,6 +14,7 @@
   import Review from './pages/Review.svelte';
   import PronunciationReview from './pages/PronunciationReview.svelte';
   import NewEntry from './pages/NewEntry.svelte';
+  import Constructions from './pages/Constructions.svelte';
   import Login from './pages/Login.svelte';
 
   let ready = $state(false);
@@ -176,6 +177,8 @@
         {#key wordMatch[1]}<Entry wordId={Number(wordMatch[1])} />{/key}
       {:else if path === '/stats'}
         <Stats />
+      {:else if path === '/constructions'}
+        <Constructions />
       {:else if path === '/review' && $reviewMode}
         <Review />
       {:else if path === '/pronunciation-review' && $editMode}

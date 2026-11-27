@@ -43,6 +43,7 @@
   <nav class="p-3 space-y-1" aria-label="Dictionary pages">
     <NavLink href="/" title="Dictionary" symbol="⌕" onNavigate={onClose} />
     <NavLink href="/stats" title="Statistics" symbol="▤" onNavigate={onClose} />
+    <NavLink href="/constructions" title="Constructions" symbol="◇" onNavigate={onClose} />
     {#if $reviewMode}
       <NavLink href="/review" title="Fast review" symbol="◈" onNavigate={onClose} />
     {/if}
