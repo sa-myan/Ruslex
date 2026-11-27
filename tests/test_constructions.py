@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from processing.constructions import (
-    apply, evidence_text, initialize, installed, key, proposals, scan, sources,
+    apply, stage, evidence_text, initialize, installed, key, proposals, scan, sources,
     validate, pages_preview, curate,
 )
 from processing.storage import write_database
@@ -129,6 +129,52 @@ class ConstructionTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT COUNT(*) FROM construction_attestations").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM construction_expression_links").fetchone()[0], 1)
             self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
+    def test_stage_all_for_review_preserves_existing_decisions_and_sources(self):
+        before = self.live.read_bytes()
+        with patch("processing.constructions.opencode", side_effect=self.fake):
+            scan(self.live, self.work, book="First Book", model="fake")
+        report = proposals(self.work)
+        self.assertEqual(len(report["proposals"]), 2)
+        self.assertEqual(self.live.read_bytes(), before)
+        with self.assertRaisesRegex(ValueError, "confirm"):
+            stage(self.live, self.work, self.root / "backups", confirmed=False)
+        initialize(self.live, self.root / "backups")
+        result = stage(self.live, self.work, self.root / "backups", confirmed=True)
+        self.assertEqual(result["staged"], 2)
+        self.assertEqual(result["new_constructions"], 2)
+        self.assertEqual(result["approved"], [])
+        with sqlite3.connect(self.live) as db:
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM constructions WHERE human_status='unreviewed'").fetchone()[0], 2)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM construction_attestations").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM construction_expression_links").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT notes FROM lexemes WHERE id=1").fetchone()[0], "unchanged")
+            db.execute(
+                "UPDATE constructions SET human_status='hidden',notes='Not a construction' WHERE pattern_key=?",
+                (key("чем X, тем Y"),),
+            )
+            db.commit()
+        repeated = stage(self.live, self.work, self.root / "backups", confirmed=True)
+        self.assertEqual(repeated["new_constructions"], 0)
+        with sqlite3.connect(self.live) as db:
+            status, note = db.execute(
+                "SELECT human_status,notes FROM constructions WHERE pattern_key=?",
+                (key("чем X, тем Y"),),
+            ).fetchone()
+            self.assertEqual((status, note), ("hidden", "Not a construction"))
+            self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
+    def test_stage_refuses_changed_source_and_incomplete_scan(self):
+        with patch("processing.constructions.opencode", side_effect=self.fake):
+            scan(self.live, self.work, book="First Book", model="fake")
+        initialize(self.live, self.root / "backups")
+        with write_database(self.live) as db:
+            db.execute("UPDATE pages SET markdown='OCR page replaced' WHERE id=10")
+        with self.assertRaisesRegex(RuntimeError, "Page text changed"):
+            stage(self.live, self.work, self.root / "backups", confirmed=True)
+        with sqlite3.connect(self.live) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM constructions").fetchone()[0], 0)
 
     def test_reject_fabricated_evidence_and_changed_book_page(self):
         batch = [{"id": "p:10:0", "kind": "page",
