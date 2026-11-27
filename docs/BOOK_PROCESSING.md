@@ -51,6 +51,12 @@ or existing workspaces.
    Optional: use `--verify-model 'provider/second-id'` for independent
    checks, and `--expressions` to analyze textbook pages for idioms.
    Expression scanning can be expensive, so it is opt-in.
+Productive, reusable grammar/discourse patterns are extracted **separately**
+rather than inserted as lexical expressions; use
+[Constructions](CONSTRUCTIONS.md) to audit stored textbook pages and existing
+expressions after processing. The construction scan is independent, can run
+without changing the dictionary, and requires explicit approval before saving
+any new construction.
 
 4. Check the single final change plan and promote once:
 

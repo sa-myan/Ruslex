@@ -13,6 +13,7 @@ inside a web request.
 | Finish the v2 pronunciation, abbreviation and forms release | [V2 release checklist](docs/RELEASE_V2.md) |
 | Install, build, deploy or roll back the website | [Deployment](docs/DEPLOYMENT.md) |
 | Import a new textbook in one isolated workspace | [Book processing](docs/BOOK_PROCESSING.md) |
+| Audit historical expressions and extract productive constructions | [Constructions](docs/CONSTRUCTIONS.md) |
 | Generate and search Russian inflected forms | [Word forms](docs/WORD_FORMS.md) |
 | Recognize abbreviations and review initialisms | [Abbreviations](docs/ABBREVIATIONS.md) |
 | Back up, restore, disable, troubleshoot | [Operations](docs/OPERATIONS.md) |

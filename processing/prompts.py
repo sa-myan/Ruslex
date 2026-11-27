@@ -59,6 +59,11 @@ government like 'ключи от квартиры'.
 Return only established idioms, phrasal units, formulaic expressions,
 frequent collocations with non-trivial meaning, and established multiword
 terms that a low-intermediate learner should know. Zero results is fine.
+Do NOT classify reusable productive constructions such as
+'чем X, тем Y', 'не только X, но и Y', or general grammar structures as
+lexical expressions merely because they occur in a textbook. Such patterns
+belong to the separate constructions audit, not the expression category.
+Fixed idioms and conventional multiword lexical units still belong here.
 Return JSON shape:
 {"expressions":[{"lemma":"иметь в виду","pos":"OTHER",
 "senses":[{"meaning":"to mean","description":"",

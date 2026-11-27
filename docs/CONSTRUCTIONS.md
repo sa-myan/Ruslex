@@ -44,9 +44,12 @@ exercise pages) and existing expression lemmas/meanings; they receive neither
 live database write access nor OpenRussian data.
 
 The plan consolidates identical canonical patterns and preserves all recorded
-page evidence and expression links. Read the report carefully: AI confidence
-alone does not authorize insertion. Review proposed meaning, pattern
-generalization, grammatical constraints and actual textbook occurrences.
+page evidence and expression links. Its `expression_review` section shows
+the classification for **each historical expression** (expression-only,
+construction, both, or uncertain), not merely aggregated totals. Read the
+report carefully: AI confidence alone does not authorize insertion. Review
+proposed meaning, pattern generalization, grammatical constraints and actual
+textbook occurrences.
 
 To approve **only specific proposed IDs**:
 
@@ -63,6 +66,13 @@ links, and runs SQLite integrity checks. Existing expression rows, senses,
 source pages and review statuses are never rewritten. Re-applying the same
 proposal IDs is idempotent. Newly inserted constructions start as **followup**,
 so they are available for human review in the Constructions page.
+
+If an existing expression is clearly **construction-only**, first approve its
+construction (so its identity, evidence and source link remain preserved), then
+use the normal expression review workflow to hide the redundant expression if
+you wish. **Both** means keep the expression visible as well as the construction.
+An uncertain classification requires manual investigation, not an automatic
+migration or deletion.
 
 For future books, use the same command after a real textbook has been promoted
 or run it against a disposable rehearsal lexicon. Do **not** promote throwaway
