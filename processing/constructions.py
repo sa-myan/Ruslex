@@ -287,6 +287,7 @@ def proposals(work: Path) -> dict:
         inputs = sources(db, book=record["book"])
     batches = [inputs[i:i + 2] for i in range(0, len(inputs), 2)]
     rows, completed, classifications = {}, 0, Counter()
+    expression_review = []
     for index, batch in enumerate(batches, 1):
         path = _batch_path(work, index)
         if not path.is_file():
@@ -297,6 +298,13 @@ def proposals(work: Path) -> dict:
         for item in results:
             classifications[item["classification"]] += 1
             source_item = by_id[item["id"]]
+            if source_item["kind"] == "expression":
+                expression_review.append({
+                    "expression_id": source_item["source_id"],
+                    "lemma": source_item["text"].split("\n", 1)[0],
+                    "classification": item["classification"],
+                    "proposed_patterns": [c["pattern"] for c in item["candidates"]],
+                })
             for candidate in item["candidates"]:
                 canonical = key(candidate["pattern"])
                 if canonical not in rows:
@@ -323,6 +331,7 @@ def proposals(work: Path) -> dict:
             "total_batches": len(batches), "completed_batches": completed,
             "remaining_batches": len(batches) - completed,
             "classifications": dict(classifications),
+            "expression_review": expression_review,
             "proposals": items, "data_mutation": "none"}
 
 

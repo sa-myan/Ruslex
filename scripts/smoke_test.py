@@ -544,7 +544,7 @@ def check_constructions(anonymous, reviewer, editor, connections) -> None:
     check(denied.status_code == 403, "Anonymous users cannot classify constructions")
     denied = json_request(editor, "patch", "/api/constructions/1/status",
                           {"human_status": "kept"})
-    check(denied.status_code == 403, "Editor without review permission cannot classify")
+    check(denied.status_code == 404, "Editor has reviewer rights; missing construction returns 404")
     invalid = json_request(reviewer, "patch", "/api/constructions/1/status",
                            {"human_status": "not-real"})
     check(invalid.status_code == 400, "Invalid construction status rejected")
