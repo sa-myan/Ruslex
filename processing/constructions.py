@@ -576,8 +576,33 @@ def proposals(work: Path) -> dict:
             "proposals": items, "data_mutation": "none"}
 
 
+def stage(live: Path, work: Path, backups: Path, *, confirmed: bool) -> dict:
+    """Put ALL completed proposals into the private review queue, not the reference.
+
+    Statuses and private notes from previous reviews are never overwritten.
+    Validation, backup and network isolation are identical to explicit apply.
+    """
+    if not confirmed:
+        raise ValueError("Explicit --confirm required")
+    report = proposals(work)
+    if report["audit_rules_version"] != AUDIT_RULES_VERSION:
+        raise RuntimeError("Old audit rules cannot be staged; create a new scan")
+    if report["remaining_batches"]:
+        raise RuntimeError("Complete the scan before staging construction reviews")
+    if not report["proposals"]:
+        return {"staged": 0, "new_constructions": 0,
+                "message": "No construction proposals to stage"}
+    result = apply(
+        live, work, backups, approved=[row["id"] for row in report["proposals"]],
+        confirmed=True, for_review=True,
+    )
+    result["staged"] = len(report["proposals"])
+    result["review_mode"] = "pending_only_no_auto_approval"
+    return result
+
+
 def apply(live: Path, work: Path, backups: Path, *, approved: list[int],
-          confirmed: bool) -> dict:
+          confirmed: bool, for_review: bool = False) -> dict:
     if not confirmed:
         raise ValueError("Explicit --confirm required")
     if not approved or any(type(x) is not int for x in approved) or len(set(approved)) != len(approved) or any(x < 1 for x in approved):
@@ -628,10 +653,12 @@ def apply(live: Path, work: Path, backups: Path, *, approved: list[int],
                 construction_id = row[0]
             else:
                 construction_id = db.execute(
-                    """INSERT INTO constructions(pattern,pattern_key,meaning,grammar,created_at)
-                       VALUES(?,?,?,?,?)""",
+                    """INSERT INTO constructions(
+                           pattern,pattern_key,meaning,grammar,human_status,created_at)
+                       VALUES(?,?,?,?,?,?)""",
                     (item["pattern"], pattern_key, item["meaning"],
-                     item["grammar"], datetime.now(timezone.utc).isoformat()),
+                     item["grammar"], "unreviewed" if for_review else "followup",
+                     datetime.now(timezone.utc).isoformat()),
                 ).lastrowid
                 newly_added += 1
             db.execute(
@@ -655,6 +682,6 @@ def apply(live: Path, work: Path, backups: Path, *, approved: list[int],
                     )
                     linked += int(c.rowcount > 0)
         _check(db)
-    return {"approved": approved, "new_constructions": newly_added,
+    return {"approved": [] if for_review else approved, "new_constructions": newly_added,
             "new_attestations": attestations, "linked_existing_expressions": linked,
             "existing_expression_rows_modified": 0, "backup": str(backup)}

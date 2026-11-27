@@ -92,10 +92,10 @@ case "$command" in
     ;;
   constructions)
     case "${1:-}" in
-      init|apply) compose run --rm --no-deps promoter python -m processing.cli constructions "$@" ;;
+      init|apply|stage) compose run --rm --no-deps promoter python -m processing.cli constructions "$@" ;;
       scan) ensure_state; compose run --rm --no-deps worker python -m processing.cli constructions "$@" ;;
       plan|pages) compose run --rm --no-deps rehearsal python -m processing.cli constructions "$@" ;;
-      *) echo "Use ./process.sh constructions {init|pages|scan|plan|apply}" >&2; exit 2 ;;
+      *) echo "Use ./process.sh constructions {init|pages|scan|plan|stage|apply}" >&2; exit 2 ;;
     esac
     ;;
   pronunciation-review)

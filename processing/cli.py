@@ -15,6 +15,7 @@ from pathlib import Path
 from .audit import connect_read_only, make_audit
 from .constructions import (initialize as constructions_init, scan as constructions_scan,
                             proposals as constructions_plan, apply as constructions_apply,
+                            stage as constructions_stage,
                             pages_preview as constructions_pages)
 from .book_status import status as book_status
 from .abbreviations import (
@@ -85,6 +86,9 @@ def main(argv=None):
     view_pages.add_argument("--limit", type=int, default=20, help="Number of page previews, 1-100")
     view_pages.add_argument("--contains", default="", help="Optional literal substring in page OCR")
     actions.add_parser("plan", help="Inspect saved proposals").add_argument("name")
+    stage_action = actions.add_parser("stage", help="Stage ALL proposals for in-app review, not approval")
+    stage_action.add_argument("name")
+    stage_action.add_argument("--confirm", action="store_true", required=True)
     approve_action = actions.add_parser("apply", help="Explicitly approve proposed constructions")
     approve_action.add_argument("name")
     approve_action.add_argument("--approve", required=True, help="Comma-separated proposal IDs")
@@ -257,6 +261,9 @@ def main(argv=None):
                     first_page=args.first_page, last_page=args.last_page)
             elif args.construction_action == "plan":
                 result = constructions_plan(workspace_dir(args.name))
+            elif args.construction_action == "stage":
+                result = constructions_stage(
+                    LIVE_DB, workspace_dir(args.name), BACKUP_ROOT, confirmed=True)
             elif args.construction_action == "apply":
                 parts = args.approve.split(",")
                 if not parts or any(not x.strip().isascii() or not x.strip().isdecimal() for x in parts):
