@@ -71,6 +71,8 @@ def main(argv=None):
     scan_action.add_argument("name")
     scan_action.add_argument("--book", help="Exact book title, or omit for all books")
     scan_action.add_argument("--model", required=True)
+    scan_action.add_argument("--kind", choices=("all", "pages", "expressions"),
+                             default="all", help="Target textbook pages or stored expressions")
     scan_action.add_argument("--max-batches", type=int)
     scan_action.add_argument("--timeout", type=int, default=300)
     scan_action.add_argument("--dry-run", action="store_true")
@@ -238,7 +240,8 @@ def main(argv=None):
             elif args.construction_action == "scan":
                 result = constructions_scan(
                     LIVE_DB, workspace_dir(args.name), book=args.book, model=args.model,
-                    max_batches=args.max_batches, dry_run=args.dry_run, timeout=args.timeout)
+                    max_batches=args.max_batches, dry_run=args.dry_run,
+                    timeout=args.timeout, kind=args.kind)
             elif args.construction_action == "plan":
                 result = constructions_plan(workspace_dir(args.name))
             elif args.construction_action == "apply":
