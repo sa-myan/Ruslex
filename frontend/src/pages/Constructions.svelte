@@ -44,6 +44,9 @@
   <p class="kicker">Language reference</p>
   <h2 class="text-3xl font-bold">Constructions</h2>
   <p class="opacity-65 mt-2">Productive patterns, separate from fixed lexical expressions.</p>
+  {#if $reviewMode}
+    <button class="btn btn-outline btn-sm mt-3" onclick={() => navigate('/construction-review')}>Review proposed constructions</button>
+  {/if}
 </div>
 <section class="surface p-5 mb-5">
   <form class="flex flex-wrap gap-3 items-end" onsubmit={(event) => { event.preventDefault(); filter(); }}>

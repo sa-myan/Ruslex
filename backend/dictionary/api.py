@@ -375,12 +375,27 @@ def construction_list(request):
 
 
 @api_errors
+@require_http_methods(["GET"])
+def construction_review_next(request):
+    denied = require(request, "review")
+    if denied is not None:
+        return denied
+    try:
+        after = int(request.GET.get("after", "0"))
+    except (TypeError, ValueError) as exc:
+        raise services.BadRequest("Invalid construction review cursor") from exc
+    return respond(constructions.next_review(
+        request.GET.get("queue", "pending"), after))
+
+
+@api_errors
 @require_http_methods(["PATCH"])
 def construction_status(request, construction_id: int):
     denied = require(request, "review")
     if denied is not None:
         return denied
     payload = data(request)
-    if set(payload) != {"human_status"}:
-        raise services.BadRequest("Expected human_status only")
-    return respond(constructions.update_status(construction_id, payload["human_status"]))
+    if set(payload) not in ({"human_status"}, {"human_status", "notes"}):
+        raise services.BadRequest("Expected human_status and optional notes only")
+    return respond(constructions.update_status(
+        construction_id, payload["human_status"], payload.get("notes")))

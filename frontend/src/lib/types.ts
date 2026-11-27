@@ -205,9 +205,15 @@ export interface Construction {
   meaning: string;
   grammar: string;
   human_status: Status;
+  notes: string;
   examples: { russian: string; english: string }[];
-  sources: { page_id: number; title: string; pdf_page: number; surface: string }[];
+  sources: { page_id: number; title: string; edition: string; pdf_page: number; printed_page: number; surface: string }[];
   expressions: { id: number; lemma: string; evidence: string }[];
+}
+export interface ConstructionReviewNext {
+  installed: boolean;
+  item: Construction | null;
+  total: number;
 }
 export interface ConstructionPage extends Page<Construction> {
   installed: boolean;

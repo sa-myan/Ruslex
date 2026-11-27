@@ -47,6 +47,7 @@ urlpatterns = [
     path("api/stats", dictionary.stats),
     path("api/books", dictionary.books),
     path("api/constructions", dictionary.construction_list),
+    path("api/construction-review/next", dictionary.construction_review_next),
     path("api/constructions/<int:construction_id>/status", dictionary.construction_status),
     path("api/tags", dictionary.tags),
     path("api/meta", dictionary.meta),

@@ -46,6 +46,7 @@
     <NavLink href="/constructions" title="Constructions" symbol="◇" onNavigate={onClose} />
     {#if $reviewMode}
       <NavLink href="/review" title="Fast review" symbol="◈" onNavigate={onClose} />
+      <NavLink href="/construction-review" title="Construction review" symbol="◇" onNavigate={onClose} />
     {/if}
     {#if $editMode}
       <NavLink href="/pronunciation-review" title="Pronunciation review" symbol="◉" onNavigate={onClose} />

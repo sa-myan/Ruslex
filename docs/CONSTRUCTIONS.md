@@ -87,6 +87,30 @@ report carefully: AI confidence alone does not authorize insertion. Review
 proposed meaning, pattern generalization, grammatical constraints and actual
 textbook occurrences.
 
+## Stage source-backed proposals in the in-app review queue
+
+Use the network-disabled promoter **once** to stage all completed proposals:
+
+```sh
+./process.sh constructions init --confirm
+./process.sh constructions stage oldbook_pages_v3 --confirm
+```
+
+Staging verifies the original source evidence, makes a backup, and writes
+all proposals to the constructions table as **unreviewed**. This does **not**
+approve or publish them, and does not modify expressions, existing words,
+or textbook pages. Repeating the stage command is idempotent: it does not
+reset decisions or reviewer notes.
+
+Turn on **Edit & review mode** in the app, select **Construction review**,
+and process the pending queue one item at a time: Keep (publish), Reject
+(hide), Defer, or Skip. Source snippets and physical/printed page references
+are included, with optional notes. Pending and deferred proposals remain
+private; only kept constructions are included in the public reference.
+The reviewer-only Constructions page can reopen hidden records for corrections.
+
+The following legacy command is optional and **not needed** for normal review.
+
 To approve **only specific proposed IDs**:
 
 ```sh
@@ -127,9 +151,9 @@ textbook samples into the actual dictionary: the scan is available separately.
   fixed Russian elements and a variable slot are required. This rules out
   elementary sentence frames, but does not prove genuine construction value.
   The model and human review remain responsible for linguistic selection.
-- The first release uses an offline CLI for proposal approval; the web UI is
-  for browsing and reviewing the **approved records**. It deliberately does
-  not expose model-authored proposals via unauthenticated HTTP endpoints.
+- Proposals are staged with an explicit offline CLI command and reviewed inside
+  the app. The reviewer-only review API does not expose pending or rejected
+  proposals to unauthenticated users.
 - Editing canonical patterns and associating multiple meanings directly from
   the UI are later enhancements. No automatic deletion/reclassification of
   original expressions is supported.
