@@ -252,34 +252,47 @@ class ConstructionTests(unittest.TestCase):
 
     def test_repair_exhaustion_preserves_earlier_batches_for_resumption(self):
         with sqlite3.connect(self.live) as db:
-            db.execute(
-                """INSERT INTO pages(id,book_id,pdf_page,printed_page,markdown,source)
-                   VALUES(11,1,3,3,?, 'test')""",
-                ("Чем больше работаешь, тем быстрее учишься.",))
-            db.execute(
-                """INSERT INTO pages(id,book_id,pdf_page,printed_page,markdown,source)
-                   VALUES(12,1,4,4,?, 'test')""",
-                ("Чем больше спишь, тем лучше.",))
+            for page_id, markdown in (
+                (11, "Чем больше работаешь, тем быстрее учишься."),
+                (12, "Чем больше спишь, тем лучше."),
+                (13, "Чем раньше уйдёшь, тем раньше придёшь."),
+            ):
+                db.execute(
+                    """INSERT INTO pages(id,book_id,pdf_page,printed_page,markdown,source)
+                       VALUES(?,1,?,?,?, 'test')""",
+                    (page_id, page_id, page_id, markdown),
+                )
             db.commit()
+
         invalid = {"results": []}
-        def model_output(prompt, *args):
-            if "VALIDATION REPAIR" in prompt or '"p:11:0"' in prompt:
+
+        def valid_pages(prompt, *args):
+            payload = json.loads(prompt.split("SOURCE INPUT (JSON): ", 1)[1])
+            return {"results": [
+                {"id": row["id"], "classification": "page", "candidates": []}
+                for row in payload
+            ]}
+
+        def fail_second_batch(prompt, *args):
+            if "VALIDATION REPAIR" in prompt or '"p:12:0"' in prompt:
                 return invalid
-            return self.fake(prompt, *args)
-        with patch("processing.constructions.opencode", side_effect=model_output) as model:
+            return valid_pages(prompt, *args)
+
+        with patch("processing.constructions.opencode", side_effect=fail_second_batch) as model:
             with self.assertRaisesRegex(ValueError, "failed validation after 3 responses"):
                 scan(self.live, self.work, book="First Book", kind="pages",
                      model="fake", max_batches=2)
+        self.assertEqual(model.call_count, 4)
         first_file = self.work / "batches" / "000001.json"
         self.assertTrue(first_file.is_file())
         self.assertFalse((self.work / "batches" / "000002.json").exists())
         for attempt in (1, 2, 3):
             self.assertTrue((self.work / "rejected" /
-                             f"000002-attempt{attempt}.json").exists())
+                             f"000002-attempt{attempt}.json").is_file())
         saved_bytes = first_file.read_bytes()
 
-        # The failed batch is the only batch sent back to the provider.
-        with patch("processing.constructions.opencode", side_effect=self.fake) as resumed:
+        # Only the failed batch is resubmitted to the model.
+        with patch("processing.constructions.opencode", side_effect=valid_pages) as resumed:
             result = scan(self.live, self.work, book="First Book", kind="pages",
                           model="fake", max_batches=1)
         self.assertEqual(result["remaining_batches"], 0)
