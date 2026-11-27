@@ -243,10 +243,10 @@ class ConstructionTests(unittest.TestCase):
         self.assertTrue(rejected.is_file())
         self.assertIn("not attested",
                       json.loads(rejected.read_text(encoding="utf-8"))["validation_error"])
-        self.assertEqual(
-            json.loads((self.work / "batches" / "000001.json").read_text(encoding="utf-8")),
-            corrected,
-        )
+        accepted = json.loads(
+            (self.work / "batches" / "000001.json").read_text(encoding="utf-8"))
+        self.assertEqual(accepted["results"], corrected["results"])
+        self.assertEqual(accepted["excluded_candidates"], [])
         self.assertEqual([x["pattern"] for x in proposals(self.work)["proposals"]],
                          ["чем X, тем Y"])
 
