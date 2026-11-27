@@ -213,9 +213,9 @@ class ConstructionTests(unittest.TestCase):
             "id": "e:1", "classification": "expression_only", "candidates": [],
         }, {
             "id": "p:10:0", "classification": "page", "candidates": [{
-                "pattern": "X and Y", "meaning": "A grammar construction",
+                "pattern": "чем X, тем Y", "meaning": "A grammar construction",
                 "grammar": "some rule",
-                "evidence": "Чем больше читаешь, тем больше узнаёшь.",
+                "evidence": "Text not present in the textbook",
                 "example_russian": "Чем больше читаешь, тем больше узнаёшь.",
                 "example_english": "The more you read, the more you learn.",
             }],
@@ -241,7 +241,7 @@ class ConstructionTests(unittest.TestCase):
         self.assertEqual(self.live.read_bytes(), before)
         rejected = self.work / "rejected" / "000001-attempt1.json"
         self.assertTrue(rejected.is_file())
-        self.assertIn("Russian canonical pattern",
+        self.assertIn("not attested",
                       json.loads(rejected.read_text(encoding="utf-8"))["validation_error"])
         self.assertEqual(
             json.loads((self.work / "batches" / "000001.json").read_text(encoding="utf-8")),
