@@ -311,6 +311,57 @@ def _load(work: Path) -> tuple[dict, Path]:
     return record, source
 
 
+def validated_batch(response: object, *, batch: list[dict], prompt: str,
+                    model: str, executable: str, timeout: int, work: Path,
+                    index: int) -> dict:
+    """Repair model schema/evidence failures at most twice; never save invalid batches.
+
+    Failed responses remain in the private audit workspace for diagnosis.
+    Previously validated batch files remain untouched.
+    """
+    for attempt in range(3):
+        try:
+            validate(response, batch)
+            return response
+        except (ValueError, TypeError, KeyError) as exc:
+            rejected = work / "rejected" / f"{index:06d}-attempt{attempt + 1}.json"
+            atomic_json(rejected, {
+                "batch": index, "source_ids": [row["id"] for row in batch],
+                "validation_error": str(exc), "response": response,
+            })
+            if attempt == 2:
+                raise ValueError(
+                    f"Construction batch {index} failed validation after 3 responses: "
+                    f"{exc}. Rejected outputs saved under {work / 'rejected'}"
+                ) from exc
+            print(
+                f"[AI constructions] batch {index} rejected: {exc}; "
+                f"requesting correction {attempt + 1}/2",
+                flush=True,
+            )
+            repair = (
+                "VALIDATION REPAIR for a Russian textbook construction audit. "
+                "The previous JSON failed a strict acceptance test. "
+                "Return the COMPLETE corrected JSON object with exactly the original "
+                "source IDs and one result per source; preserve all valid results. "
+                "For a construction pattern, include genuine Russian Cyrillic fixed "
+                "material and justified productive slots, not an English-only "
+                "syntactic label, transliteration, or arbitrary X/Y placeholders. "
+                "If a candidate is not a sound, source-supported Russian construction, "
+                "REMOVE that candidate instead of inventing Russian words or evidence. "
+                "For page sources, classification is always 'page', even with no "
+                "candidates. For expression sources, use expression_only when "
+                "appropriate. Evidence must be an EXACT contiguous quote from the "
+                "original source; examples and meanings must respect the original "
+                "task requirements. Return only valid JSON, no code fences.\n"
+                f"VALIDATION ERROR: {exc}\n"
+                f"ORIGINAL TASK:\n{prompt}\n"
+                f"REJECTED RESPONSE:\n{json.dumps(response, ensure_ascii=False)}"
+            )
+            response = opencode(repair, model, executable, timeout)
+    raise AssertionError("Unreachable")
+
+
 def scan(live: Path, work: Path, *, book: str | None, model: str,
          max_batches: int | None = None, dry_run: bool = False,
          timeout: int = 300, executable: str = "opencode",
@@ -367,10 +418,13 @@ def scan(live: Path, work: Path, *, book: str | None, model: str,
         print(f"[AI constructions] {index}/{len(batches)}: " +
               ", ".join(x["id"] for x in batch), flush=True)
         payload = [{k: x[k] for k in ("id", "kind", "text")} for x in batch]
-        response = opencode(PROMPT + json.dumps(payload, ensure_ascii=False),
-                            model, executable, timeout)
-        validate(response, batch)
-        atomic_json(target, response)
+        prompt = PROMPT + json.dumps(payload, ensure_ascii=False)
+        response = opencode(prompt, model, executable, timeout)
+        accepted = validated_batch(
+            response, batch=batch, prompt=prompt, model=model,
+            executable=executable, timeout=timeout, work=work, index=index,
+        )
+        atomic_json(target, accepted)
         newly_processed += 1
     done = sum(_batch_path(work, i).exists() for i in range(1, len(batches) + 1))
     return {"source_count": len(inputs), "batch_count": len(batches),

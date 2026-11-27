@@ -58,6 +58,15 @@ example `oldbook_pages_v2`) for the stricter audit.
 If the first model batch is satisfactory, resume with the **same** book, model
 and `--kind` value. Omit `--max-batches` to finish; partial validated batches
 from the same rules version are reused.
+
+A provider response can occasionally violate the strict construction validator,
+for example by returning an English-only canonical pattern. The scan now saves
+the rejected JSON and validation error inside `WORKSPACE/rejected/`, requests
+at most **two model corrections**, and accepts only a fully validated result.
+If all three responses fail, the scan stops with diagnostic file paths;
+previously accepted batches remain intact, and retrying the same command
+resumes at the failed batch without reprocessing those successes. A repair
+must remove unsupported candidates rather than fabricate Cyrillic evidence.
 To audit every imported textbook, omit `--book` when starting a **new**
 workspace. Models receive saved Markdown fragments (including grammar and
 exercise pages) and existing expression lemmas/meanings; they receive neither

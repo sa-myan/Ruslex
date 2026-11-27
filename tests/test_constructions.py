@@ -208,6 +208,84 @@ class ConstructionTests(unittest.TestCase):
                  kind="pages", first_page=1, last_page=1, dry_run=True)
         self.assertEqual(self.live.read_bytes(), before)
 
+    def test_invalid_model_proposal_is_repaired_and_rejected_output_saved(self):
+        malformed = {"results": [{
+            "id": "e:1", "classification": "expression_only", "candidates": [],
+        }, {
+            "id": "p:10:0", "classification": "page", "candidates": [{
+                "pattern": "X and Y", "meaning": "A grammar construction",
+                "grammar": "some rule",
+                "evidence": "Чем больше читаешь, тем больше узнаёшь.",
+                "example_russian": "Чем больше читаешь, тем больше узнаёшь.",
+                "example_english": "The more you read, the more you learn.",
+            }],
+        }]}
+        corrected = {"results": [{
+            "id": "e:1", "classification": "expression_only", "candidates": [],
+        }, {
+            "id": "p:10:0", "classification": "page", "candidates": [{
+                "pattern": "чем X, тем Y", "meaning": "proportional comparison",
+                "grammar": "comparative correlative",
+                "evidence": "Чем больше читаешь, тем больше узнаёшь.",
+                "example_russian": "Чем больше читаешь, тем больше узнаёшь.",
+                "example_english": "The more you read, the more you learn.",
+            }],
+        }]}
+        before = self.live.read_bytes()
+        with patch("processing.constructions.opencode", side_effect=[malformed, corrected]) as model:
+            result = scan(self.live, self.work, book="First Book",
+                          model="fake", max_batches=1)
+        self.assertEqual(model.call_count, 2)
+        self.assertIn("VALIDATION REPAIR", model.call_args.args[0])
+        self.assertEqual(result["completed_batches"], 1)
+        self.assertEqual(self.live.read_bytes(), before)
+        rejected = self.work / "rejected" / "000001-attempt1.json"
+        self.assertTrue(rejected.is_file())
+        self.assertIn("Russian canonical pattern",
+                      json.loads(rejected.read_text(encoding="utf-8"))["validation_error"])
+        self.assertEqual(
+            json.loads((self.work / "batches" / "000001.json").read_text(encoding="utf-8")),
+            corrected,
+        )
+        self.assertEqual([x["pattern"] for x in proposals(self.work)["proposals"]],
+                         ["чем X, тем Y"])
+
+    def test_repair_exhaustion_preserves_earlier_batches_for_resumption(self):
+        with sqlite3.connect(self.live) as db:
+            db.execute(
+                """INSERT INTO pages(id,book_id,pdf_page,printed_page,markdown,source)
+                   VALUES(11,1,3,3,?, 'test')""",
+                ("Чем больше работаешь, тем быстрее учишься.",))
+            db.execute(
+                """INSERT INTO pages(id,book_id,pdf_page,printed_page,markdown,source)
+                   VALUES(12,1,4,4,?, 'test')""",
+                ("Чем больше спишь, тем лучше.",))
+            db.commit()
+        invalid = {"results": []}
+        def model_output(prompt, *args):
+            if "VALIDATION REPAIR" in prompt or '"p:11:0"' in prompt:
+                return invalid
+            return self.fake(prompt, *args)
+        with patch("processing.constructions.opencode", side_effect=model_output) as model:
+            with self.assertRaisesRegex(ValueError, "failed validation after 3 responses"):
+                scan(self.live, self.work, book="First Book", kind="pages",
+                     model="fake", max_batches=2)
+        first_file = self.work / "batches" / "000001.json"
+        self.assertTrue(first_file.is_file())
+        self.assertFalse((self.work / "batches" / "000002.json").exists())
+        for attempt in (1, 2, 3):
+            self.assertTrue((self.work / "rejected" /
+                             f"000002-attempt{attempt}.json").exists())
+        saved_bytes = first_file.read_bytes()
+
+        # The failed batch is the only batch sent back to the provider.
+        with patch("processing.constructions.opencode", side_effect=self.fake) as resumed:
+            result = scan(self.live, self.work, book="First Book", kind="pages",
+                          model="fake", max_batches=1)
+        self.assertEqual(result["remaining_batches"], 0)
+        self.assertEqual(resumed.call_count, 1)
+        self.assertEqual(first_file.read_bytes(), saved_bytes)
+
     def test_old_rules_cannot_resume_or_approve(self):
         with patch("processing.constructions.opencode", side_effect=self.fake):
             scan(self.live, self.work, book="First Book", model="fake")
