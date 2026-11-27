@@ -156,6 +156,46 @@ class ConstructionTests(unittest.TestCase):
                 scan(self.live, self.work, book="First Book", model="fake")
         self.assertEqual(key("  ЧЕМ  X,  ТЕМ Y  "), "чем x, тем y")
 
+    def test_pages_only_scan_skips_existing_expressions(self):
+        with sqlite3.connect(self.live) as db:
+            db.row_factory = sqlite3.Row
+            selected = sources(db, book="First Book", kind="pages")
+            self.assertEqual(len(selected), 1)
+            self.assertTrue(all(row["kind"] == "page" for row in selected))
+            expressions = sources(db, book="First Book", kind="expressions")
+            self.assertEqual(len(expressions), 1)
+            self.assertEqual(expressions[0]["kind"], "expression")
+        with patch("processing.constructions.opencode", side_effect=self.fake):
+            progress = scan(self.live, self.work, book="First Book", model="fake",
+                            kind="pages", max_batches=1)
+        self.assertEqual(progress["source_kind"], "pages")
+        self.assertEqual(progress["completed_batches"], 1)
+        self.assertEqual(progress["remaining_batches"], 0)
+        report = proposals(self.work)
+        self.assertEqual(report["source_kind"], "pages")
+        self.assertEqual(report["expression_review"], [])
+        self.assertEqual([x["pattern"] for x in report["proposals"]],
+                         ["чем X, тем Y"])
+        with self.assertRaisesRegex(ValueError, "source kind changed"):
+            scan(self.live, self.work, book="First Book", model="fake",
+                 kind="expressions", dry_run=True)
+
+    def test_old_rules_cannot_resume_or_approve(self):
+        with patch("processing.constructions.opencode", side_effect=self.fake):
+            scan(self.live, self.work, book="First Book", model="fake")
+        manifest = self.work / "manifest.json"
+        old = json.loads(manifest.read_text(encoding="utf-8"))
+        old.pop("audit_rules_version")
+        manifest.write_text(json.dumps(old), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "rules were updated"):
+            scan(self.live, self.work, book="First Book", model="fake")
+        initialize(self.live, self.root / "backups")
+        with self.assertRaisesRegex(RuntimeError, "Old audit rules"):
+            apply(self.live, self.work, self.root / "backups",
+                  approved=[1], confirmed=True)
+        with sqlite3.connect(self.live) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM constructions").fetchone()[0], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

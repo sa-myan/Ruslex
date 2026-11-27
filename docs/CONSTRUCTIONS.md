@@ -32,12 +32,24 @@ than one edition, the command refuses the ambiguous selection.
 ```sh
 ./process.sh inventory
 ./process.sh constructions scan old_book_constructions --book 'YOUR BOOK TITLE' --model 'provider/model-id' --dry-run
-./process.sh constructions scan old_book_constructions --book 'YOUR BOOK TITLE' --model 'provider/model-id' --max-batches 1
+./process.sh constructions scan old_book_constructions --book 'YOUR BOOK TITLE' --model 'provider/model-id' --kind pages --max-batches 1
 ./process.sh constructions plan old_book_constructions
 ```
 
-If the first model batch is satisfactory, resume with the **same** book and
-model. Omit `--max-batches` to finish; partial validated batches are reused.
+Use `--kind pages` for the initial real-textbook test, `--kind expressions`
+to audit existing expressions independently, or `--kind all` for both
+(the default). Page-only batches no longer wait behind expressions.
+
+**Important:** the first trial of `oldbook_constructions` used a less
+selective classification prompt and produced questionable proposals for
+`а вы` and `а вот`. That workspace is retained for inspection but MUST NOT
+be resumed or approved: the audit rules are versioned and old scans are
+explicitly blocked from promotion. Create a **new workspace name** (for
+example `oldbook_pages_v2`) for the stricter audit.
+
+If the first model batch is satisfactory, resume with the **same** book, model
+and `--kind` value. Omit `--max-batches` to finish; partial validated batches
+from the same rules version are reused.
 To audit every imported textbook, omit `--book` when starting a **new**
 workspace. Models receive saved Markdown fragments (including grammar and
 exercise pages) and existing expression lemmas/meanings; they receive neither
