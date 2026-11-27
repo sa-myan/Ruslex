@@ -14,7 +14,8 @@ from pathlib import Path
 
 from .audit import connect_read_only, make_audit
 from .constructions import (initialize as constructions_init, scan as constructions_scan,
-                            proposals as constructions_plan, apply as constructions_apply)
+                            proposals as constructions_plan, apply as constructions_apply,
+                            pages_preview as constructions_pages)
 from .book_status import status as book_status
 from .abbreviations import (
     plan as abbreviation_plan, rehearse as abbreviation_rehearse,
@@ -73,9 +74,16 @@ def main(argv=None):
     scan_action.add_argument("--model", required=True)
     scan_action.add_argument("--kind", choices=("all", "pages", "expressions"),
                              default="all", help="Target textbook pages or stored expressions")
+    scan_action.add_argument("--first-page", type=int, help="Inclusive physical PDF page (with --last-page)")
+    scan_action.add_argument("--last-page", type=int, help="Inclusive physical PDF page (with --first-page)")
     scan_action.add_argument("--max-batches", type=int)
     scan_action.add_argument("--timeout", type=int, default=300)
     scan_action.add_argument("--dry-run", action="store_true")
+    view_pages = actions.add_parser("pages", help="Read-only saved textbook page previews, no AI")
+    view_pages.add_argument("--book", required=True, help="Exact imported book title")
+    view_pages.add_argument("--start-page", type=int, default=1, help="First physical PDF page to list")
+    view_pages.add_argument("--limit", type=int, default=20, help="Number of page previews, 1-100")
+    view_pages.add_argument("--contains", default="", help="Optional literal substring in page OCR")
     actions.add_parser("plan", help="Inspect saved proposals").add_argument("name")
     approve_action = actions.add_parser("apply", help="Explicitly approve proposed constructions")
     approve_action.add_argument("name")
@@ -237,11 +245,16 @@ def main(argv=None):
         if args.command == "constructions":
             if args.construction_action == "init":
                 result = constructions_init(LIVE_DB, BACKUP_ROOT)
+            elif args.construction_action == "pages":
+                result = constructions_pages(
+                    LIVE_DB, book=args.book, start_page=args.start_page,
+                    limit=args.limit, contains=args.contains)
             elif args.construction_action == "scan":
                 result = constructions_scan(
                     LIVE_DB, workspace_dir(args.name), book=args.book, model=args.model,
                     max_batches=args.max_batches, dry_run=args.dry_run,
-                    timeout=args.timeout, kind=args.kind)
+                    timeout=args.timeout, kind=args.kind,
+                    first_page=args.first_page, last_page=args.last_page)
             elif args.construction_action == "plan":
                 result = constructions_plan(workspace_dir(args.name))
             elif args.construction_action == "apply":

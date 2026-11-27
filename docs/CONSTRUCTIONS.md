@@ -31,10 +31,18 @@ than one edition, the command refuses the ambiguous selection.
 
 ```sh
 ./process.sh inventory
+./process.sh constructions pages --book 'YOUR BOOK TITLE' --limit 20
+./process.sh constructions pages --book 'YOUR BOOK TITLE' --contains 'чем'
 ./process.sh constructions scan old_book_constructions --book 'YOUR BOOK TITLE' --model 'provider/model-id' --dry-run
 ./process.sh constructions scan old_book_constructions --book 'YOUR BOOK TITLE' --model 'provider/model-id' --kind pages --max-batches 1
 ./process.sh constructions plan old_book_constructions
 ```
+
+To **target a known grammar page without scanning hundreds of pages**, supply
+`--kind pages --first-page N --last-page M` (inclusive **physical PDF**
+page numbers from the `pages` preview). The page range must be fixed for
+the workspace: a changed range requires a new workspace name. The page
+preview reads saved OCR only, never invokes AI or writes a database.
 
 Use `--kind pages` for the initial real-textbook test, `--kind expressions`
 to audit existing expressions independently, or `--kind all` for both

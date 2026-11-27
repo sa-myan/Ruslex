@@ -100,11 +100,61 @@ def _book_id(db: sqlite3.Connection, book: str | None) -> int | None:
     return rows[0][0]
 
 
+def _check_page_range(kind: str, book: str | None,
+                      first_page: int | None, last_page: int | None) -> None:
+    if (first_page is None) != (last_page is None):
+        raise ValueError("Provide both --first-page and --last-page")
+    if first_page is None:
+        return
+    if kind != "pages" or not book:
+        raise ValueError("A page range requires --kind pages and --book")
+    if (type(first_page) is not int or type(last_page) is not int or
+            first_page <= 0 or last_page < first_page):
+        raise ValueError("Invalid physical PDF page range")
+
+
+def pages_preview(live: Path, *, book: str, start_page: int = 1,
+                  limit: int = 20, contains: str = "") -> dict:
+    """Inspect stored page locations/snippets without an AI call or DB write."""
+    if type(start_page) is not int or start_page < 1:
+        raise ValueError("Start page must be a positive PDF page number")
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ValueError("Preview limit must be 1 to 100")
+    if not isinstance(contains, str) or len(contains) > 150:
+        raise ValueError("Search text must be at most 150 characters")
+    with read_database(live) as db:
+        book_id = _book_id(db, book)
+        rows = db.execute(
+            """SELECT id,pdf_page,printed_page,markdown FROM pages
+               WHERE book_id=? AND pdf_page>=? ORDER BY pdf_page,id""",
+            (book_id, start_page),
+        ).fetchall()
+    needle = contains.casefold().strip()
+    matching = [row for row in rows if not needle or needle in row["markdown"].casefold()]
+    previews = []
+    for row in matching[:limit]:
+        raw = row["markdown"]
+        center = raw.casefold().find(needle) if needle else 0
+        begin = max(0, center - 75)
+        excerpt = " ".join(raw[begin:begin + 260].split())
+        previews.append({
+            "page_id": row["id"], "pdf_page": row["pdf_page"],
+            "printed_page": row["printed_page"], "preview": excerpt,
+            "markdown_characters": len(raw),
+        })
+    return {"book": book, "start_pdf_page": start_page,
+            "contains": contains, "matching_pages": len(matching),
+            "shown_pages": len(previews), "pages": previews,
+            "data_mutation": "none"}
+
+
 def sources(db: sqlite3.Connection, *, book: str | None = None,
-            kind: str = "all") -> list[dict]:
+            kind: str = "all", first_page: int | None = None,
+            last_page: int | None = None) -> list[dict]:
     """Read saved textbook pages and/or existing expressions, without writes."""
     if kind not in {"all", "pages", "expressions"}:
         raise ValueError("Source kind must be all, pages or expressions")
+    _check_page_range(kind, book, first_page, last_page)
     book_id = _book_id(db, book)
     result = []
     sql = """SELECT l.id,l.lemma,l.pos,l.human_status,
@@ -125,9 +175,17 @@ def sources(db: sqlite3.Connection, *, book: str | None = None,
                        "source_id": item["id"], "text": payload,
                        "evidence_base": item["lemma"],
                        "signature": signature(payload)})
-    pages = ("SELECT id,markdown FROM pages" if book_id is None
-             else "SELECT id,markdown FROM pages WHERE book_id=?")
-    for row in (db.execute(pages + " ORDER BY id", [] if book_id is None else [book_id])
+    where, params = [], []
+    if book_id is not None:
+        where.append("book_id=?")
+        params.append(book_id)
+    if first_page is not None:
+        where.append("pdf_page BETWEEN ? AND ?")
+        params.extend([first_page, last_page])
+    pages = "SELECT id,markdown FROM pages"
+    if where:
+        pages += " WHERE " + " AND ".join(where)
+    for row in (db.execute(pages + " ORDER BY id", params)
                 if kind != "expressions" else ()):
         markdown = row["markdown"]
         # Long technical textbook pages are scanned in overlapping windows.
@@ -256,15 +314,19 @@ def _load(work: Path) -> tuple[dict, Path]:
 def scan(live: Path, work: Path, *, book: str | None, model: str,
          max_batches: int | None = None, dry_run: bool = False,
          timeout: int = 300, executable: str = "opencode",
-         kind: str = "all") -> dict:
+         kind: str = "all", first_page: int | None = None,
+         last_page: int | None = None) -> dict:
     if kind not in {"all", "pages", "expressions"}:
         raise ValueError("Source kind must be all, pages or expressions")
+    _check_page_range(kind, book, first_page, last_page)
     if not model.strip() or max_batches is not None and max_batches < 1:
         raise ValueError("Specify a model and positive max-batches")
     if (work / "manifest.json").exists():
         record, source = _load(work)
         if record["book"] != book or record["model"] != model or record.get("kind", "all") != kind:
             raise ValueError("Model/book/source kind changed; start a new audit workspace")
+        if record.get("page_range") != ([first_page, last_page] if first_page is not None else None):
+            raise ValueError("Physical page range changed; start a new audit workspace")
         if record.get("audit_rules_version", 1) != AUDIT_RULES_VERSION:
             raise ValueError("Construction audit rules were updated; start a NEW workspace "
                              "rather than mixing old and new AI classifications")
@@ -277,11 +339,13 @@ def scan(live: Path, work: Path, *, book: str | None, model: str,
             raise RuntimeError("Incomplete audit snapshot; choose another workspace")
         snapshot(live, source)
         record = {"book": book, "model": model, "kind": kind,
+                  "page_range": [first_page, last_page] if first_page is not None else None,
                   "audit_rules_version": AUDIT_RULES_VERSION,
                   "snapshot_sha": signature(source.read_bytes())}
         atomic_json(work / "manifest.json", record)
     with read_database(source) as db:
-        inputs = sources(db, book=book, kind=kind)
+        inputs = sources(db, book=book, kind=kind,
+                         first_page=first_page, last_page=last_page)
     batches = [inputs[i:i + 2] for i in range(0, len(inputs), 2)]
     newly_processed = 0
     for index, batch in enumerate(batches, 1):
@@ -294,6 +358,7 @@ def scan(live: Path, work: Path, *, book: str | None, model: str,
             preview = [{k: x[k] for k in ("id", "kind", "text")} for x in batch]
             return {"source_count": len(inputs), "batch_count": len(batches),
                     "source_kind": kind,
+                    "page_range": [first_page, last_page] if first_page is not None else None,
                     "first_batch_sources": [x["id"] for x in batch],
                     "prompt_preview": (PROMPT + json.dumps(preview, ensure_ascii=False))[:1800],
                     "data_mutation": "none"}
@@ -310,6 +375,7 @@ def scan(live: Path, work: Path, *, book: str | None, model: str,
     done = sum(_batch_path(work, i).exists() for i in range(1, len(batches) + 1))
     return {"source_count": len(inputs), "batch_count": len(batches),
             "source_kind": kind,
+            "page_range": [first_page, last_page] if first_page is not None else None,
             "completed_batches": done, "remaining_batches": len(batches) - done,
             "new_batches": newly_processed,
             "workspace": str(work), "data_mutation": "workspace_only"}
@@ -318,7 +384,9 @@ def scan(live: Path, work: Path, *, book: str | None, model: str,
 def proposals(work: Path) -> dict:
     record, source = _load(work)
     with read_database(source) as db:
-        inputs = sources(db, book=record["book"], kind=record.get("kind", "all"))
+        first, last = record.get("page_range") or (None, None)
+        inputs = sources(db, book=record["book"], kind=record.get("kind", "all"),
+                         first_page=first, last_page=last)
     batches = [inputs[i:i + 2] for i in range(0, len(inputs), 2)]
     rows, completed, classifications = {}, 0, Counter()
     expression_review = []
@@ -363,6 +431,7 @@ def proposals(work: Path) -> dict:
         items.append({"id": pos, **item})
     return {"book": record["book"], "model": record["model"],
             "source_kind": record.get("kind", "all"),
+            "page_range": record.get("page_range"),
             "audit_rules_version": record.get("audit_rules_version", 1),
             "total_batches": len(batches), "completed_batches": completed,
             "remaining_batches": len(batches) - completed,

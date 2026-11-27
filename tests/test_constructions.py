@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from processing.constructions import (
     apply, evidence_text, initialize, installed, key, proposals, scan, sources,
-    validate,
+    validate, pages_preview,
 )
 from processing.storage import write_database
 
@@ -179,6 +179,34 @@ class ConstructionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source kind changed"):
             scan(self.live, self.work, book="First Book", model="fake",
                  kind="expressions", dry_run=True)
+
+    def test_page_preview_and_targeted_scan_are_read_only_and_scoped(self):
+        with self.assertRaisesRegex(ValueError, "both --first-page"):
+            with sqlite3.connect(self.live) as db:
+                db.row_factory = sqlite3.Row
+                sources(db, book="First Book", kind="pages", first_page=2)
+        with self.assertRaisesRegex(ValueError, "requires --kind pages"):
+            with sqlite3.connect(self.live) as db:
+                db.row_factory = sqlite3.Row
+                sources(db, book="First Book", kind="all", first_page=2, last_page=2)
+        before = self.live.read_bytes()
+        view = pages_preview(self.live, book="First Book", contains="больше")
+        self.assertEqual(view["data_mutation"], "none")
+        self.assertEqual(view["pages"][0]["pdf_page"], 2)
+        self.assertEqual(view["matching_pages"], 1)
+        self.assertEqual(pages_preview(self.live, book="First Book",
+                                       contains="not in OCR")["matching_pages"], 0)
+        self.assertEqual(self.live.read_bytes(), before)
+        with patch("processing.constructions.opencode", side_effect=self.fake):
+            report = scan(self.live, self.work, book="First Book", model="fake",
+                          kind="pages", first_page=2, last_page=2, max_batches=1)
+        self.assertEqual(report["page_range"], [2, 2])
+        self.assertEqual(report["remaining_batches"], 0)
+        self.assertEqual(proposals(self.work)["page_range"], [2, 2])
+        with self.assertRaisesRegex(ValueError, "page range changed"):
+            scan(self.live, self.work, book="First Book", model="fake",
+                 kind="pages", first_page=1, last_page=1, dry_run=True)
+        self.assertEqual(self.live.read_bytes(), before)
 
     def test_old_rules_cannot_resume_or_approve(self):
         with patch("processing.constructions.opencode", side_effect=self.fake):
