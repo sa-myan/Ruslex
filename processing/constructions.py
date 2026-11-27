@@ -72,16 +72,15 @@ def initialize(live: Path, backups: Path) -> dict:
             return {"installed": True, "changed": False}
     backup = _backup(live, backups, "constructions")
     with write_database(live) as db:
-        db.execute("BEGIN IMMEDIATE")
-        # executescript commits implicitly; all statements are idempotent and the
-        # existing dictionary is protected by the pre-migration backup.
-        db.executescript(SCHEMA)
+        # executescript starts its own transaction; commit only after checks.
+        db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA)
         _check(db)
     return {"installed": True, "changed": True, "backup": str(backup)}
 
 
-def signature(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def signature(text: str | bytes) -> str:
+    raw = text.encode("utf-8") if isinstance(text, str) else text
+    return hashlib.sha256(raw).hexdigest()
 
 
 def evidence_text(text: str) -> str:
@@ -224,7 +223,7 @@ def _load(work: Path) -> tuple[dict, Path]:
     if not manifest.is_file() or not source.is_file():
         raise ValueError("Run constructions scan to create this audit workspace")
     record = json.loads(manifest.read_text(encoding="utf-8"))
-    if signature(source.read_bytes().hex()) != record["snapshot_sha"]:
+    if signature(source.read_bytes()) != record["snapshot_sha"]:
         raise ValueError("Historical construction snapshot has changed")
     return record, source
 
@@ -247,12 +246,12 @@ def scan(live: Path, work: Path, *, book: str | None, model: str,
             raise RuntimeError("Incomplete audit snapshot; choose another workspace")
         snapshot(live, source)
         record = {"book": book, "model": model,
-                  "snapshot_sha": signature(source.read_bytes().hex())}
+                  "snapshot_sha": signature(source.read_bytes())}
         atomic_json(work / "manifest.json", record)
     with read_database(source) as db:
         inputs = sources(db, book=book)
     batches = [inputs[i:i + 2] for i in range(0, len(inputs), 2)]
-    complete = sum(_batch_path(work, i).exists() for i in range(1, len(batches) + 1))
+    newly_processed = 0
     for index, batch in enumerate(batches, 1):
         target = _batch_path(work, index)
         if target.exists():
@@ -260,11 +259,12 @@ def scan(live: Path, work: Path, *, book: str | None, model: str,
             validate(json.loads(target.read_text(encoding="utf-8")), batch)
             continue
         if dry_run:
+            preview = [{k: x[k] for k in ("id", "kind", "text")} for x in batch]
             return {"source_count": len(inputs), "batch_count": len(batches),
                     "first_batch_sources": [x["id"] for x in batch],
-                    "prompt_preview": (PROMPT + json.dumps(batch, ensure_ascii=False))[:1800],
+                    "prompt_preview": (PROMPT + json.dumps(preview, ensure_ascii=False))[:1800],
                     "data_mutation": "none"}
-        if max_batches is not None and index - complete > max_batches:
+        if max_batches is not None and newly_processed >= max_batches:
             break
         print(f"[AI constructions] {index}/{len(batches)}: " +
               ", ".join(x["id"] for x in batch), flush=True)
@@ -273,9 +273,11 @@ def scan(live: Path, work: Path, *, book: str | None, model: str,
                             model, executable, timeout)
         validate(response, batch)
         atomic_json(target, response)
+        newly_processed += 1
     done = sum(_batch_path(work, i).exists() for i in range(1, len(batches) + 1))
     return {"source_count": len(inputs), "batch_count": len(batches),
             "completed_batches": done, "remaining_batches": len(batches) - done,
+            "new_batches": newly_processed,
             "workspace": str(work), "data_mutation": "workspace_only"}
 
 
@@ -328,7 +330,7 @@ def apply(live: Path, work: Path, backups: Path, *, approved: list[int],
           confirmed: bool) -> dict:
     if not confirmed:
         raise ValueError("Explicit --confirm required")
-    if not approved or len(set(approved)) != len(approved) or any(x < 1 for x in approved):
+    if not approved or any(type(x) is not int for x in approved) or len(set(approved)) != len(approved) or any(x < 1 for x in approved):
         raise ValueError("Approve one or more distinct positive proposal IDs")
     result = proposals(work)
     if result["remaining_batches"]:
