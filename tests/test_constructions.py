@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from processing.constructions import (
     apply, evidence_text, initialize, installed, key, proposals, scan, sources,
-    validate, pages_preview,
+    validate, pages_preview, curate,
 )
 from processing.storage import write_database
 
@@ -298,6 +298,46 @@ class ConstructionTests(unittest.TestCase):
         self.assertEqual(result["remaining_batches"], 0)
         self.assertEqual(resumed.call_count, 1)
         self.assertEqual(first_file.read_bytes(), saved_bytes)
+
+    def test_strict_quality_gate_discards_basic_grammar_and_deduplicates_period(self):
+        ordinary = ["Это X", "Это X.", "X ли Y", "X? (ИК-3)", "а X?"]
+        good = ["чем X, тем Y", "не столько X, сколько Y",
+                "стоит только X, как Y", "дело не в X, а в Y",
+                "не успел X, как Y"]
+        input_response = {"results": [{
+            "id": "p:10:0", "classification": "page",
+            "candidates": [{"pattern": p} for p in ordinary + good],
+        }]}
+        original = json.dumps(input_response, ensure_ascii=False)
+        cleaned = curate(input_response)
+        self.assertEqual(
+            [r["pattern"] for r in cleaned["results"][0]["candidates"]], good)
+        self.assertEqual(
+            [r["pattern"] for r in cleaned["excluded_candidates"]], ordinary)
+        self.assertEqual(json.dumps(input_response, ensure_ascii=False), original)
+        self.assertEqual(key("Это X"), key("Это X."))
+
+    def test_trivial_ai_proposals_are_excluded_from_saved_batch_plan(self):
+        basic = {
+            "id": "p:10:0", "classification": "page", "candidates": [{
+                "pattern": "Это X", "meaning": "Basic identification",
+                "grammar": "Nominative noun after это",
+                "evidence": "Чем больше читаешь, тем больше узнаёшь.",
+                "example_russian": "Это моя книга.",
+                "example_english": "This is my book.",
+            }],
+        }
+        with patch("processing.constructions.opencode",
+                   return_value={"results": [
+                       {"id": "e:1", "classification": "expression_only", "candidates": []},
+                       basic,
+                   ]}) as model:
+            scan(self.live, self.work, book="First Book", model="fake")
+            self.assertEqual(model.call_count, 1)
+        plan = proposals(self.work)
+        self.assertEqual(plan["proposals"], [])
+        self.assertEqual(plan["excluded_candidates"][0]["pattern"], "Это X")
+        self.assertEqual(plan["remaining_batches"], 0)
 
     def test_old_rules_cannot_resume_or_approve(self):
         with patch("processing.constructions.opencode", side_effect=self.fake):

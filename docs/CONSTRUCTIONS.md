@@ -48,12 +48,14 @@ Use `--kind pages` for the initial real-textbook test, `--kind expressions`
 to audit existing expressions independently, or `--kind all` for both
 (the default). Page-only batches no longer wait behind expressions.
 
-**Important:** the first trial of `oldbook_constructions` used a less
-selective classification prompt and produced questionable proposals for
-`а вы` and `а вот`. That workspace is retained for inspection but MUST NOT
-be resumed or approved: the audit rules are versioned and old scans are
-explicitly blocked from promotion. Create a **new workspace name** (for
-example `oldbook_pages_v2`) for the stricter audit.
+**Important:** early trials under audit rules v1 and v2 returned overly
+broad patterns such as `а X?`, `Это X`, `X ли Y`, and an intonation
+notation. Audit rules **v3** select learnable multi-element templates, and a
+conservative structural filter removes basic one-word frames and records the
+excluded candidates separately in `constructions plan`. These earlier
+workspaces remain readable but cannot be resumed or approved under v3.
+Start a new workspace (for example `oldbook_pages_v3`) and keep the same
+book, model and scope within it.
 
 If the first model batch is satisfactory, resume with the **same** book, model
 and `--kind` value. Omit `--max-batches` to finish; partial validated batches
@@ -113,9 +115,13 @@ textbook samples into the actual dictionary: the scan is available separately.
   model and saved textbook content. The provider must be tested with one batch.
 - Attestation matching validates real text but cannot itself prove that an
   abstract generalization is linguistically correct. Human approval is required.
-- Canonical pattern deduplication is exact after whitespace/case normalization,
-  not full semantic paraphrase matching. Closely related proposals should be
-  consolidated manually before approval.
+- Canonical pattern deduplication normalizes whitespace, case and a final
+  declarative period, not full semantic paraphrase matching. Closely related
+  proposals should still be consolidated manually before approval.
+- The structural quality filter is deliberately conservative: at least two
+  fixed Russian elements and a variable slot are required. This rules out
+  elementary sentence frames, but does not prove genuine construction value.
+  The model and human review remain responsible for linguistic selection.
 - The first release uses an offline CLI for proposal approval; the web UI is
   for browsing and reviewing the **approved records**. It deliberately does
   not expose model-authored proposals via unauthenticated HTTP endpoints.
