@@ -75,7 +75,12 @@ exercise pages) and existing expression lemmas/meanings; they receive neither
 live database write access nor OpenRussian data.
 
 The plan consolidates identical canonical patterns and preserves all recorded
-page evidence and expression links. Its `expression_review` section shows
+page evidence and expression links. Every page-sourced `evidence` item displays
+`source_id` (the internal database primary key), `pdf_page` (physical page
+number), and `printed_page` (number printed in the book). **Do not add or
+subtract from `source_id` to infer a page number.** The separate read-only
+`constructions pages` command can verify mappings before any correction.
+Its `expression_review` section shows
 the classification for **each historical expression** (expression-only,
 construction, both, or uncertain), not merely aggregated totals. Read the
 report carefully: AI confidence alone does not authorize insertion. Review

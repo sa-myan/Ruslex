@@ -98,6 +98,13 @@ class ConstructionTests(unittest.TestCase):
         report = proposals(self.work)
         self.assertEqual(report["remaining_batches"], 0)
         self.assertEqual(len(report["proposals"]), 2)
+        # The report must not confuse primary keys with PDF/printed page numbers.
+        from_page = next(item for item in report["proposals"]
+                         if item["pattern"] == "чем X, тем Y")
+        self.assertEqual(from_page["evidence"][0]["source_id"], 10)
+        self.assertEqual(from_page["evidence"][0]["pdf_page"], 2)
+        self.assertEqual(from_page["evidence"][0]["printed_page"], 2)
+        self.assertEqual(from_page["evidence"][0]["book_title"], "First Book")
         self.assertEqual(
             {item["pattern"] for item in report["proposals"]},
             {"не только X, но и Y", "чем X, тем Y"},

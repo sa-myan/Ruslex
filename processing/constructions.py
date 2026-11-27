@@ -502,6 +502,21 @@ def proposals(work: Path) -> dict:
         first, last = record.get("page_range") or (None, None)
         inputs = sources(db, book=record["book"], kind=record.get("kind", "all"),
                          first_page=first, last_page=last)
+        # Source IDs are SQLite primary keys, NOT physical PDF page numbers.
+        # These labels are read from the sealed snapshot and do not alter
+        # the stored IDs or any evidence used by the promoter.
+        page_labels = {
+            row["id"]: {
+                "pdf_page": row["pdf_page"],
+                "printed_page": row["printed_page"],
+                "book_title": row["title"],
+                "book_edition": row["edition"],
+            }
+            for row in db.execute(
+                """SELECT p.id,p.pdf_page,p.printed_page,b.title,b.edition
+                   FROM pages p JOIN books b ON b.id=p.book_id"""
+            )
+        }
     batches = [inputs[i:i + 2] for i in range(0, len(inputs), 2)]
     rows, completed, classifications = {}, 0, Counter()
     expression_review = []
@@ -542,6 +557,8 @@ def proposals(work: Path) -> dict:
                     "source_signature": source_item["signature"],
                     "surface": candidate["evidence"].strip(),
                 }
+                if source_item["kind"] == "page":
+                    evidence.update(page_labels[source_item["source_id"]])
                 if evidence not in rows[canonical]["evidence"]:
                     rows[canonical]["evidence"].append(evidence)
     items = []
