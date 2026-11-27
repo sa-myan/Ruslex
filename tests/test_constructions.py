@@ -42,6 +42,11 @@ class ConstructionTests(unittest.TestCase):
                 """INSERT INTO senses(lexeme_id,meaning)
                    VALUES(1,'not only ... but also')"""
             )
+            db.execute(
+                """INSERT INTO lexeme_pages(lexeme_id,page_id,surface,context,count)
+                   VALUES(1,10,'Не только он читает, но и она.',
+                          'Не только он читает, но и она.',1)"""
+            )
             db.commit()
         self.work = self.root / "scan"
 
