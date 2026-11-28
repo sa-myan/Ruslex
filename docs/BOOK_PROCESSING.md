@@ -170,7 +170,7 @@ edition, after verifying its ZIP's actual numbering:
 ```sh
 ./process.sh inspect-ocr /ocr/technical_book2.zip
 # ONLY if the inspection starts at page 1 and the content is PDF page 3:
-./process.sh book-start technical_book2_import --input /ocr/technical_book2.zip \\
+./process.sh book-start technical_book2_import --input /ocr/technical_book2.zip \
   --book technical_book2 --page-shift 2
 # If inspection already begins at page 3, omit --page-shift 2 instead.
 ```
