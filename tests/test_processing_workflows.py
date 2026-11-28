@@ -62,6 +62,58 @@ class ProcessingTest(unittest.TestCase):
         self.assertEqual(result["data_mutation"], "none")
         self.assertEqual(before, candidate.read_bytes())
 
+    def test_book_start_page_shift_imports_entire_ocr_range(self):
+        """ZIP starting at OCR page 1 but PDF page 3 must not lose trailing pages."""
+        text = self.root / "partial-book.md"
+        text.write_text(
+            "<!-- page: 1 -->\nМама дома.\n"
+            "<!-- page: 2 -->\nДом большой.\n"
+            "<!-- page: 3 -->\nКниги здесь.\n", encoding="utf-8")
+        workspace = self.root / "partial_book"
+        outcome = start_book(
+            self.live, workspace, text, book="technical_book2", edition="",
+            first=None, last=None, page_shift=2, analyzer=FakeMorph())
+        self.assertEqual(outcome["ocr"]["pages_added"], 3)
+        with sqlite3.connect(workspace / "candidate.db") as db:
+            pages = db.execute(
+                "SELECT pdf_page,printed_page FROM pages ORDER BY pdf_page").fetchall()
+            self.assertEqual(pages, [(3, 3), (4, 4), (5, 5)])
+            self.assertEqual(db.execute("SELECT edition FROM books").fetchone()[0], "")
+        manifest = json.loads(
+            (workspace / "book-import.json").read_text(encoding="utf-8"))
+        self.assertEqual((manifest["first"], manifest["last"]), (3, 5))
+        self.assertEqual(manifest["page_shift"], 2)
+
+        # Explicit physical bounds still select a subset after shifting.
+        subset = self.root / "partial_subset"
+        selected = start_book(
+            self.live, subset, text, book="technical_book2", edition="",
+            first=4, last=5, page_shift=2, analyzer=FakeMorph())
+        self.assertEqual(selected["ocr"]["pages_added"], 2)
+        with sqlite3.connect(subset / "candidate.db") as db:
+            self.assertEqual(
+                db.execute("SELECT pdf_page FROM pages ORDER BY pdf_page").fetchall(),
+                [(4,), (5,)],
+            )
+
+    def test_book_start_does_not_shift_already_physical_numbered_pages(self):
+        text = self.root / "physical-book.md"
+        text.write_text(
+            "<!-- page: 3 -->\nМама дома.\n"
+            "<!-- page: 4 -->\nКниги здесь.\n",
+            encoding="utf-8",
+        )
+        workspace = self.root / "physical_book"
+        outcome = start_book(
+            self.live, workspace, text, book="technical_book2", edition="",
+            first=None, last=None, page_shift=0, analyzer=FakeMorph())
+        self.assertEqual(outcome["ocr"]["pages_added"], 2)
+        with sqlite3.connect(workspace / "candidate.db") as db:
+            self.assertEqual(
+                db.execute("SELECT pdf_page,printed_page FROM pages ORDER BY pdf_page").fetchall(),
+                [(3, 3), (4, 4)],
+            )
+
     def test_book_run_advances_from_form_ai_to_enrichment_in_one_call(self):
         workspace = self.root / "automatic"
         page = self.root / "automatic.md"

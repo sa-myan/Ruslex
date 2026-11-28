@@ -34,8 +34,13 @@ def start(live: Path, workspace: Path, source: Path, *,
     inspected = inspect(source)
     if inspected["pages"] < 1:
         raise ValueError("OCR has no pages")
-    first = inspected["first_page"] if first is None else first
-    last = inspected["last_page"] if last is None else last
+    # --page-shift converts OCR-local numbering to physical PDF numbering.
+    # Apply it to the AUTOMATIC range as well; otherwise selecting the
+    # unshifted bounds would drop the final pages of a partial PDF export.
+    first = inspected["first_page"] + page_shift if first is None else first
+    last = inspected["last_page"] + page_shift if last is None else last
+    if first < 1 or last < first:
+        raise ValueError("Invalid physical PDF page range after OCR page shift")
     create_workspace(live, workspace)
     with write_database(workspace / "candidate.db") as db:
         imported = import_book(

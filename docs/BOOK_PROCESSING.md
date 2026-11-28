@@ -155,8 +155,25 @@ cross-edition processing.
 
 - `first/last`: the physical 1-based PDF pages to import.
 - `page-shift`: added to the OCR-export page numbers when extraction started
-  in the middle of a textbook.
+  in the middle of a textbook. **Use only if the inspected ZIP's first page
+  starts at 1 despite corresponding to a later physical PDF page.** For
+  example, OCR pages 1–119 extracted from physical PDF pages 3–121 require
+  `--page-shift 2`. When the ZIP already reports pages 3–121, omit this flag.
+  Automatic first/last bounds are calculated *after* the shift to avoid
+  dropping the final pages.
 - `offset`: physical page number minus printed textbook page number.
+  When PDF and printed numbers match, leave this at 0.
+
+For the technical textbook imported under title `technical_book2` with no
+edition, after verifying its ZIP's actual numbering:
+
+```sh
+./process.sh inspect-ocr /ocr/technical_book2.zip
+# ONLY if the inspection starts at page 1 and the content is PDF page 3:
+./process.sh book-start technical_book2_import --input /ocr/technical_book2.zip \\
+  --book technical_book2 --page-shift 2
+# If inspection already begins at page 3, omit --page-shift 2 instead.
+```
 
 ## 2. Make a fresh, isolated workspace
 
