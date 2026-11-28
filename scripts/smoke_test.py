@@ -529,6 +529,74 @@ def check_abbreviations(anonymous, editor, connections) -> None:
           "Expression with abbreviation renders normally")
 
 
+def check_constructions(anonymous, reviewer, editor, connections) -> None:
+    """Construction review remains isolated from existing lexical expression data."""
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE name='constructions'")
+        if cursor.fetchone() is None:
+            print("SKIP construction API: optional schema not initialized")
+            return
+    listing = anonymous.get("/api/constructions")
+    check(listing.status_code == 200 and listing.json()["installed"],
+          "Public constructions endpoint responds")
+    denied = json_request(anonymous, "patch", "/api/constructions/1/status",
+                          {"human_status": "kept"})
+    check(denied.status_code == 403, "Anonymous users cannot classify constructions")
+    denied = json_request(editor, "patch", "/api/constructions/1/status",
+                          {"human_status": "kept"})
+    check(denied.status_code == 404, "Editor has reviewer rights; missing construction returns 404")
+    invalid = json_request(reviewer, "patch", "/api/constructions/1/status",
+                           {"human_status": "not-real"})
+    check(invalid.status_code == 400, "Invalid construction status rejected")
+    with connections["lexicon"].cursor() as cursor:
+        cursor.execute(
+            """INSERT INTO constructions(pattern,pattern_key,meaning,grammar,created_at)
+               VALUES(%s,%s,%s,%s,datetime('now'))""",
+            ["чем X, тем Y", "чем x, тем y", "the more, the more", "comparatives"])
+        construction_id = cursor.lastrowid
+        cursor.execute(
+            "INSERT INTO construction_examples(construction_id,russian,english) VALUES(%s,%s,%s)",
+            [construction_id, "Чем больше читаешь, тем больше узнаёшь.",
+             "The more you read, the more you learn."])
+    public = anonymous.get("/api/constructions").json()
+    check(not any(item["id"] == construction_id for item in public["items"]),
+          "Pending constructions are PRIVATE even before review")
+    check(anonymous.get("/api/construction-review/next").status_code == 403,
+          "Public clients cannot enumerate construction proposals")
+    queue = reviewer.get("/api/construction-review/next?queue=deferred")
+    check(queue.status_code == 200 and queue.json()["item"]["id"] == construction_id,
+          "Reviewer can inspect deferred construction with source-backed card")
+    check(reviewer.get("/api/construction-review/next?queue=wrong").status_code == 400,
+          "Review queue validates filters")
+    note_response = json_request(
+        reviewer, "patch", f"/api/constructions/{construction_id}/status",
+        {"human_status": "unreviewed", "notes": "Inspect surrounding context"})
+    check(note_response.status_code == 200, "Reviewer can reopen with private note")
+    queue = reviewer.get("/api/construction-review/next?queue=pending")
+    check(queue.json()["item"]["notes"] == "Inspect surrounding context",
+          "Review queue preserves notes")
+    response = json_request(
+        reviewer, "patch", f"/api/constructions/{construction_id}/status",
+        {"human_status": "hidden"})
+    check(response.status_code == 200, "Reviewer can hide a construction")
+    check(not any(item["id"] == construction_id for item in
+                  anonymous.get("/api/constructions").json()["items"]),
+          "Hidden construction inaccessible to public list")
+    check(any(item["id"] == construction_id for item in
+              reviewer.get("/api/constructions?status=all").json()["items"]),
+          "Reviewer can inspect hidden constructions")
+    response = json_request(
+        reviewer, "patch", f"/api/constructions/{construction_id}/status",
+        {"human_status": "kept"})
+    check(response.status_code == 200, "Reviewer can keep a construction")
+    check(anonymous.get("/api/constructions?status=hidden").json()["total"] ==
+          anonymous.get("/api/constructions").json()["total"],
+          "Anonymous clients cannot force hidden status listing")
+    check(any(item["id"] == construction_id for item in
+              anonymous.get("/api/constructions").json()["items"]),
+          "Kept construction becomes public only after reviewer acceptance")
+
+
 def check_signup(anonymous, User, SiteOptions) -> None:
     SiteOptions.objects.filter(pk=1).update(registration_open=True)
     signup = json_request(
@@ -599,6 +667,7 @@ def main() -> None:
         check_pronunciation(anonymous, reviewer, editor, connections)
         check_pronunciation_review_jump(anonymous, reviewer, editor, connections)
         check_abbreviations(anonymous, editor, connections)
+        check_constructions(anonymous, reviewer, editor, connections)
         check_signup(anonymous, User, SiteOptions)
         print("ALL DJANGO SMOKE TESTS PASSED; live databases were not touched")
 

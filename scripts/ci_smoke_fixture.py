@@ -20,6 +20,7 @@ from processing.abbreviations import initialize as init_abbreviations
 from processing.paradigms import initialize as init_forms
 from processing.pronunciation_review import initialize as init_review
 from processing.pronunciations import initialize as init_pronunciations
+from processing.constructions import initialize as init_constructions
 
 
 def create_fixture(db_path: Path, backups: Path) -> None:
@@ -46,6 +47,7 @@ def create_fixture(db_path: Path, backups: Path) -> None:
     init_pronunciations(db_path, backups)
     init_forms(db_path, backups)
     init_review(db_path, backups)
+    init_constructions(db_path, backups)
     with sqlite3.connect(db_path) as db:
         db.execute(
             """INSERT INTO lexeme_forms(

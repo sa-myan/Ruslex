@@ -86,6 +86,17 @@ class ProcessingLauncherTest(unittest.TestCase):
             "stress43_trial2 --approve 21,93"
         ])
 
+    def test_construction_stage_uses_offline_promoter(self):
+        result = self.run_command(
+            "constructions", "stage", "oldbook_pages_v3", "--confirm"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log_lines(), [
+            "compose -f docker-compose.processing.yml run --rm --no-deps "
+            "promoter python -m processing.cli constructions stage "
+            "oldbook_pages_v3 --confirm"
+        ])
+
     def test_stress_apply_uses_promoter_not_worker(self):
         result = self.run_command(
             "stress", "ai-apply", "stress43_trial2", "--confirm", "--approve", "21,93"

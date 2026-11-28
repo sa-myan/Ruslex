@@ -13,6 +13,10 @@ from contextlib import closing
 from pathlib import Path
 
 from .audit import connect_read_only, make_audit
+from .constructions import (initialize as constructions_init, scan as constructions_scan,
+                            proposals as constructions_plan, apply as constructions_apply,
+                            stage as constructions_stage,
+                            pages_preview as constructions_pages)
 from .book_status import status as book_status
 from .abbreviations import (
     plan as abbreviation_plan, rehearse as abbreviation_rehearse,
@@ -61,6 +65,34 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("inventory", help="Read-only statistics on the live dictionary")
+    constructions = commands.add_parser("constructions", help="Productive constructions: historical audit")
+    actions = constructions.add_subparsers(dest="construction_action", required=True)
+    actions.add_parser("init", help="Install construction tables with backup").add_argument(
+        "--confirm", action="store_true", required=True)
+    scan_action = actions.add_parser("scan", help="Resume grounded AI scan of pages and expressions")
+    scan_action.add_argument("name")
+    scan_action.add_argument("--book", help="Exact book title, or omit for all books")
+    scan_action.add_argument("--model", required=True)
+    scan_action.add_argument("--kind", choices=("all", "pages", "expressions"),
+                             default="all", help="Target textbook pages or stored expressions")
+    scan_action.add_argument("--first-page", type=int, help="Inclusive physical PDF page (with --last-page)")
+    scan_action.add_argument("--last-page", type=int, help="Inclusive physical PDF page (with --first-page)")
+    scan_action.add_argument("--max-batches", type=int)
+    scan_action.add_argument("--timeout", type=int, default=300)
+    scan_action.add_argument("--dry-run", action="store_true")
+    view_pages = actions.add_parser("pages", help="Read-only saved textbook page previews, no AI")
+    view_pages.add_argument("--book", required=True, help="Exact imported book title")
+    view_pages.add_argument("--start-page", type=int, default=1, help="First physical PDF page to list")
+    view_pages.add_argument("--limit", type=int, default=20, help="Number of page previews, 1-100")
+    view_pages.add_argument("--contains", default="", help="Optional literal substring in page OCR")
+    actions.add_parser("plan", help="Inspect saved proposals").add_argument("name")
+    stage_action = actions.add_parser("stage", help="Stage ALL proposals for in-app review, not approval")
+    stage_action.add_argument("name")
+    stage_action.add_argument("--confirm", action="store_true", required=True)
+    approve_action = actions.add_parser("apply", help="Explicitly approve proposed constructions")
+    approve_action.add_argument("name")
+    approve_action.add_argument("--approve", required=True, help="Comma-separated proposal IDs")
+    approve_action.add_argument("--confirm", action="store_true", required=True)
     reference = commands.add_parser("reference", help="Explore the read-only OpenRussian database")
     reference_commands = reference.add_subparsers(dest="reference_command", required=True)
     reference_commands.add_parser("info", help="Inspect source schema and record counts")
@@ -214,7 +246,34 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
-        if args.command == "pronunciation-review":
+        if args.command == "constructions":
+            if args.construction_action == "init":
+                result = constructions_init(LIVE_DB, BACKUP_ROOT)
+            elif args.construction_action == "pages":
+                result = constructions_pages(
+                    LIVE_DB, book=args.book, start_page=args.start_page,
+                    limit=args.limit, contains=args.contains)
+            elif args.construction_action == "scan":
+                result = constructions_scan(
+                    LIVE_DB, workspace_dir(args.name), book=args.book, model=args.model,
+                    max_batches=args.max_batches, dry_run=args.dry_run,
+                    timeout=args.timeout, kind=args.kind,
+                    first_page=args.first_page, last_page=args.last_page)
+            elif args.construction_action == "plan":
+                result = constructions_plan(workspace_dir(args.name))
+            elif args.construction_action == "stage":
+                result = constructions_stage(
+                    LIVE_DB, workspace_dir(args.name), BACKUP_ROOT, confirmed=True)
+            elif args.construction_action == "apply":
+                parts = args.approve.split(",")
+                if not parts or any(not x.strip().isascii() or not x.strip().isdecimal() for x in parts):
+                    raise ValueError("Approve comma-separated integer IDs from constructions plan")
+                result = constructions_apply(
+                    LIVE_DB, workspace_dir(args.name), BACKUP_ROOT,
+                    approved=[int(x.strip()) for x in parts], confirmed=True)
+            else:
+                parser.error("Unknown constructions operation")
+        elif args.command == "pronunciation-review":
             if args.review_action == "plan":
                 result = review_plan(LIVE_DB)
             elif args.review_action == "init":

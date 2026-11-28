@@ -16,7 +16,7 @@ from django.views.decorators.http import require_http_methods
 
 from accounts.api import has_edit, has_review
 
-from . import queries, services, pronunciation, pronunciation_review
+from . import queries, services, pronunciation, pronunciation_review, constructions
 from .catalog import ANIMACIES, ASPECTS, PARTS_OF_SPEECH, RELATIONS
 
 
@@ -367,3 +367,35 @@ def pronunciation_review_defer(request, word_id: int):
     if set(payload) != {"deferred", "note"}:
         raise services.BadRequest("Expected deferred and note fields")
     return respond(pronunciation_review.defer(word_id, payload["note"], payload["deferred"]))
+
+@api_errors
+@require_http_methods(["GET"])
+def construction_list(request):
+    return respond(constructions.list_records(request.GET, can_review=has_review(request.user)))
+
+
+@api_errors
+@require_http_methods(["GET"])
+def construction_review_next(request):
+    denied = require(request, "review")
+    if denied is not None:
+        return denied
+    try:
+        after = int(request.GET.get("after", "0"))
+    except (TypeError, ValueError) as exc:
+        raise services.BadRequest("Invalid construction review cursor") from exc
+    return respond(constructions.next_review(
+        request.GET.get("queue", "pending"), after))
+
+
+@api_errors
+@require_http_methods(["PATCH"])
+def construction_status(request, construction_id: int):
+    denied = require(request, "review")
+    if denied is not None:
+        return denied
+    payload = data(request)
+    if set(payload) not in ({"human_status"}, {"human_status", "notes"}):
+        raise services.BadRequest("Expected human_status and optional notes only")
+    return respond(constructions.update_status(
+        construction_id, payload["human_status"], payload.get("notes")))
